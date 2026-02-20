@@ -1,0 +1,4 @@
+schema_version,step,time_s,active_seed,scenario,total_ions,deuterium,tritium,helium,avg_energy_kev,fusion_events_total,particle_cap_hit_events,rejected_injection_pairs,rejected_fusion_ash,out_of_domain_cell_clamp_events,fusion_attempts,fusion_accepted,max_reactions_in_cell,kinetic_j,beam_injected_j,fusion_alpha_injected_j,total_charge_c
+2,0,0,20260220,COLD_VACUUM,1000,500,500,0,0,0,0,0,0,0,0,0,0,0,0,0,0.00016021765908960813
+2,100,1.0000000116860974e-05,20260220,COLD_VACUUM,1000,500,500,0,6.5292881982131898e-12,0,0,0,0,0,0,0,0,1.0461072749239717e-24,0,0,0.00016021765908960813
+2,200,2.0000000233721948e-05,20260220,COLD_VACUUM,1000,500,500,0,5.031860003730017e-12,0,0,0,0,0,0,0,0,8.0619283396641121e-25,0,0,0.00016021765908960813

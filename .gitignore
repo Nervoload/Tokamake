@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+build_*/
+build_manual/
+
+# Runtime outputs
+output/
+tmp/
+benchmarks/results/
+
+# Baseline generated runs (reference files are tracked separately)
+baselines/m0/generated_runs/
+
+# macOS
+.DS_Store

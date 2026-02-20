@@ -1,0 +1,4 @@
+schema_version,step,time_s,residual_available,residual_l2,solver_name,status,iterations,converged,tolerance,note
+2,0,0,false,nan,none,placeholder,0,false,nan,"Electrostatic solver residual unavailable in current field model"
+2,100,1.0000000116860974e-05,false,nan,none,placeholder,0,false,nan,"Electrostatic solver residual unavailable in current field model"
+2,200,2.0000000233721948e-05,false,nan,none,placeholder,0,false,nan,"Electrostatic solver residual unavailable in current field model"
