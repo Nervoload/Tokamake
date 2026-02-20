@@ -40,11 +40,15 @@ This is the scientific honesty layer for the project.
 ### Physically modeled
 - A charge-density-driven electrostatic potential solve (Poisson-like or screened Poisson form).
 - Electric field sampled by ions through particle-mesh coupling.
+- Selectable electric-field runtime mode (`placeholder` vs `electrostatic`).
+- Particle-mesh coupling supports NGP [nearest-grid-point] and CIC [cloud-in-cell] assignment/interpolation.
+- Residual-based SOR [successive over-relaxation] stopping in electrostatic mode.
 
 ### Placeholder / approximation
 - Simplified geometry terms (e.g., omission of full cylindrical Laplacian terms) if not yet implemented.
 - Simplified electron closure or neutralizing background profile.
 - Fixed Debye-like screening or heuristic screening length.
+- Uniform Cartesian mesh is used as first integration target before geometry-aware electrostatic operators.
 
 ### Intentionally non-physical for stability
 - Placeholder restoring electric field mode that acts like a confining spring.
@@ -55,8 +59,9 @@ This is the scientific honesty layer for the project.
 - Solver residual norm vs iteration (for SOR [successive over-relaxation] or equivalent solver).
 - Electric field magnitude histograms.
 - Potential and field snapshots on the grid.
-- Known-charge-distribution standalone finite-difference harness test case (current milestone state).
-- Engine-path electrostatic validation hook/test is pending Milestone 3 runtime solver integration.
+- Sidecar artifact export: `electrostatic_diagnostics_v2.csv` (Milestone 7 v2 artifact contract).
+- Known-charge-distribution standalone finite-difference harness test case.
+- Engine-path runtime electrostatic solver validation test with manufactured 3D Dirichlet solution.
 - Grid refinement test for field convergence.
 
 ---

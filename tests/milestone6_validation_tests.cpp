@@ -145,6 +145,86 @@ std::vector<uint32_t> AggregateFineCountsToCoarse(const tokamak::SpatialGrid& co
     return aggregated;
 }
 
+std::size_t ElectrostaticIndex3D(int x, int y, int z, int width) {
+    return static_cast<std::size_t>(x + (width * (y + (width * z))));
+}
+
+double ManufacturedPotential3D(double x_m, double y_m, double z_m, double length_m, double amplitude_V) {
+    return amplitude_V * std::sin((kPi * x_m) / length_m) * std::sin((kPi * y_m) / length_m) *
+           std::sin((kPi * z_m) / length_m);
+}
+
+double ManufacturedChargeDensity3D(double x_m, double y_m, double z_m, double length_m, double amplitude_V) {
+    const double scale = 3.0 * kPi * kPi * kEpsilon0 * amplitude_V / (length_m * length_m);
+    return scale * std::sin((kPi * x_m) / length_m) * std::sin((kPi * y_m) / length_m) *
+           std::sin((kPi * z_m) / length_m);
+}
+
+struct ManufacturedElectrostaticResult {
+    double potentialRelativeL2 = 0.0;
+    double residualL2 = 0.0;
+    bool converged = false;
+};
+
+ManufacturedElectrostaticResult SolveManufacturedElectrostatic(int gridWidth, uint32_t maxIterations, double tolerance) {
+    const double length_m = 1.0;
+    const double amplitude_V = 8.0;
+    const double cellSize = length_m / static_cast<double>(gridWidth - 1);
+
+    tokamak::ElectrostaticMeshGeometry geometry;
+    geometry.gridWidth = gridWidth;
+    geometry.cellSize_m = cellSize;
+    geometry.offset_m = 0.0;
+
+    std::vector<double> rho(tokamak::ElectrostaticCellCount(geometry), 0.0);
+    for (int z = 0; z < gridWidth; ++z) {
+        for (int y = 0; y < gridWidth; ++y) {
+            for (int x = 0; x < gridWidth; ++x) {
+                const double x_m = cellSize * static_cast<double>(x);
+                const double y_m = cellSize * static_cast<double>(y);
+                const double z_m = cellSize * static_cast<double>(z);
+                rho[ElectrostaticIndex3D(x, y, z, gridWidth)] =
+                    ManufacturedChargeDensity3D(x_m, y_m, z_m, length_m, amplitude_V);
+            }
+        }
+    }
+
+    tokamak::ElectrostaticSolveConfig solveConfig;
+    solveConfig.boundaryCondition = tokamak::ElectrostaticBoundaryCondition::DirichletZero;
+    solveConfig.chargeAssignmentScheme = tokamak::ChargeAssignmentScheme::CIC;
+    solveConfig.tolerance = tolerance;
+    solveConfig.maxIterations = maxIterations;
+    solveConfig.sorOmega = 1.6;
+    solveConfig.neutralizingBackgroundFraction = 0.0;
+
+    std::vector<double> potential(tokamak::ElectrostaticCellCount(geometry), 0.0);
+    const tokamak::ElectrostaticSolveResult solveResult =
+        tokamak::SolvePoissonSor(geometry, solveConfig, 0.0, rho, &potential);
+
+    double errorSqSum = 0.0;
+    double referenceSqSum = 0.0;
+    for (int z = 1; z < gridWidth - 1; ++z) {
+        for (int y = 1; y < gridWidth - 1; ++y) {
+            for (int x = 1; x < gridWidth - 1; ++x) {
+                const double x_m = cellSize * static_cast<double>(x);
+                const double y_m = cellSize * static_cast<double>(y);
+                const double z_m = cellSize * static_cast<double>(z);
+                const double analytic = ManufacturedPotential3D(x_m, y_m, z_m, length_m, amplitude_V);
+                const double numeric = potential[ElectrostaticIndex3D(x, y, z, gridWidth)];
+                const double error = numeric - analytic;
+                errorSqSum += error * error;
+                referenceSqSum += analytic * analytic;
+            }
+        }
+    }
+
+    ManufacturedElectrostaticResult result;
+    result.potentialRelativeL2 = std::sqrt(errorSqSum / referenceSqSum);
+    result.residualL2 = solveResult.residual.residualL2;
+    result.converged = solveResult.residual.converged;
+    return result;
+}
+
 }  // namespace
 
 TEST(Milestone6ValidationTest, UniformBGyroFrequencyAndRadiusMatchAnalytic) {
@@ -451,4 +531,32 @@ TEST(Milestone6ValidationTest, ElectrostaticPoissonStandaloneNumericHarnessMatch
         electricRelativeL2,
         0.0,
         electricRelativeTolerance);
+}
+
+TEST(Milestone6ValidationTest, RuntimeElectrostaticSorMatchesManufactured3DDirichletSolution) {
+    const ManufacturedElectrostaticResult result = SolveManufacturedElectrostatic(17, 4000, 1.0e-6);
+
+    EXPECT_TRUE(result.converged);
+    EXPECT_TRUE(result.residualL2 <= 1.0e-6);
+
+    const ScalarTolerance potentialRelativeTolerance{
+        0.03,
+        0.0,
+        "3% relative L2 tolerance for 3D manufactured solution on 17^3 grid under SOR.",
+    };
+    ExpectNearWithTolerance(
+        "runtime electrostatic potential relative L2",
+        result.potentialRelativeL2,
+        0.0,
+        potentialRelativeTolerance);
+}
+
+TEST(Milestone6ValidationTest, RuntimeElectrostaticGridRefinementImprovesPotentialError) {
+    const ManufacturedElectrostaticResult coarse = SolveManufacturedElectrostatic(9, 3000, 1.0e-6);
+    const ManufacturedElectrostaticResult fine = SolveManufacturedElectrostatic(17, 5000, 1.0e-6);
+
+    EXPECT_TRUE(coarse.converged);
+    EXPECT_TRUE(fine.converged);
+    EXPECT_LT(fine.potentialRelativeL2, coarse.potentialRelativeL2);
+    EXPECT_LT(fine.potentialRelativeL2, coarse.potentialRelativeL2 * 0.55);
 }

@@ -11,7 +11,8 @@ This checklist defines milestones that move the simulator from a stable prototyp
 - Milestone 0: baseline run manifest support is available in CLI output.
 - Milestone 1: implemented.
 - Milestone 2: implemented in canonical runtime path (bounded profile model + CLI profile controls + runtime diagnostics + sidecar artifact export).
-- Milestone 3+: pending.
+- Milestone 3: implemented in canonical runtime path (selectable electrostatic mode + residual-based SOR + CIC particle-mesh coupling + runtime diagnostics).
+- Milestone 4+: pending.
 
 ---
 
@@ -122,6 +123,13 @@ Upgrade the electric-field path from a placeholder closure to a controlled elect
 - Upgrade field interpolation to matching CIC interpolation.
 - Add grid-resolution and convergence tests for the electric field.
 
+### Implementation status
+- Done: CLI/RunConfig supports electric-field mode selection (`placeholder`, `electrostatic`), boundary condition selection, charge assignment selection, and SOR controls.
+- Done: runtime electrostatic path uses particle-mesh coupling with selectable NGP/CIC deposition and matching interpolation.
+- Done: SOR solve exposes per-step residual availability, convergence, iteration count, and tolerance through telemetry/artifacts.
+- Done: sidecar artifact `electrostatic_diagnostics_v2.csv` is exported without changing existing v2 summary/radial contracts.
+- Done: validation includes standalone electrostatic benchmark plus runtime manufactured-solution and refinement tests.
+
 ### Exit criteria
 - Electric-field solver convergence is measured, not assumed.
 - Field noise and numerical heating are reduced after CIC upgrade.
@@ -205,8 +213,8 @@ Validate subsystems against analytic or controlled reference behaviors.
 - Tolerances are documented.
 
 ### Implementation notes
-- Poisson validation currently uses a standalone finite-difference numeric harness test.
-- Engine-path electrostatic validation remains pending Milestone 3 field-solver integration.
+- Poisson validation includes a standalone finite-difference numeric harness test.
+- Engine-path electrostatic validation is covered by manufactured-solution and grid-refinement tests.
 
 ---
 

@@ -60,6 +60,23 @@ Examples from repository root:
 ./scripts/run_debug.sh --current-profile custom --current-profile-table ./path/to/profile.csv
 ```
 
+## Electrostatic mode CLI examples
+
+1. Placeholder electric field (default):
+```bash
+./scripts/run_debug.sh --electric-field-mode placeholder
+```
+
+2. Electrostatic SOR with CIC assignment:
+```bash
+./scripts/run_debug.sh --electric-field-mode electrostatic --charge-assignment cic --electrostatic-grid-bins 16 --electrostatic-tol 1e-5 --electrostatic-max-iters 600 --electrostatic-omega 1.5
+```
+
+3. Electrostatic mode with Neumann boundary:
+```bash
+./scripts/run_debug.sh --electric-field-mode electrostatic --electrostatic-bc neumann0
+```
+
 If `cmake` is unavailable, fallback behavior is script-specific:
 - `tests/run_validation.sh` performs a manual fallback compile in `build_manual/`.
 - `scripts/run_debug.sh` and `benchmarks/run_benchmark.sh` use prebuilt fallback binaries in `build_manual/` when present.
