@@ -21,9 +21,11 @@ using tokamak::ChargeAssignmentScheme;
 using tokamak::CurrentProfilePoint;
 using tokamak::ElectricFieldMode;
 using tokamak::ElectrostaticBoundaryCondition;
+using tokamak::FusionReactivityModelKind;
 using tokamak::PlasmaCurrentProfileKind;
 using tokamak::RunConfig;
 using tokamak::Scenario;
+using tokamak::WallBoundaryMode;
 
 struct CliOptions {
     RunConfig runConfig;
@@ -198,6 +200,13 @@ void PrintUsage(const char* argv0) {
               << "  --electrostatic-tol <value>\n"
               << "  --electrostatic-max-iters <N>\n"
               << "  --electrostatic-omega <value>\n"
+              << "  --fusion-reactivity-model <sigmae-table>\n"
+              << "  --fusion-cross-section-scale <value>\n"
+              << "  --fusion-probability-clamp <fraction>\n"
+              << "  --fusion-min-energy-kev <value>\n"
+              << "  --fusion-diagnostics-bins <N>\n"
+              << "  --wall-boundary-mode <reflect|absorb|recycle>\n"
+              << "  --recycle-fraction <fraction>\n"
               << "  --artifacts-root <path>\n"
               << "  --artifact-every <int>\n"
               << "  --particle-snapshot-every <int>\n"
@@ -470,6 +479,97 @@ bool ParseArgs(int argc, char** argv, CliOptions* options) {
             options->runConfig.electrostaticSorOmega = omega;
             continue;
         }
+        if (arg == "--fusion-reactivity-model") {
+            const char* value = needValue("--fusion-reactivity-model");
+            if (value == nullptr) {
+                return false;
+            }
+            FusionReactivityModelKind modelKind = FusionReactivityModelKind::SigmaE_Table;
+            if (!tokamak::ParseFusionReactivityModelKind(value, &modelKind)) {
+                std::cerr << "Invalid fusion-reactivity-model value: " << value << "\n";
+                return false;
+            }
+            options->runConfig.fusionReactivityModelKind = modelKind;
+            continue;
+        }
+        if (arg == "--fusion-cross-section-scale") {
+            const char* value = needValue("--fusion-cross-section-scale");
+            if (value == nullptr) {
+                return false;
+            }
+            double scale = 0.0;
+            if (!ParseDouble(value, &scale) || scale < 0.0) {
+                std::cerr << "Invalid fusion-cross-section-scale: " << value << "\n";
+                return false;
+            }
+            options->runConfig.fusionCrossSectionScale = scale;
+            continue;
+        }
+        if (arg == "--fusion-probability-clamp") {
+            const char* value = needValue("--fusion-probability-clamp");
+            if (value == nullptr) {
+                return false;
+            }
+            double clamp = 0.0;
+            if (!ParseDouble(value, &clamp) || clamp < 0.0 || clamp > 1.0) {
+                std::cerr << "Invalid fusion-probability-clamp: " << value << " (expected 0 <= clamp <= 1)\n";
+                return false;
+            }
+            options->runConfig.fusionProbabilityClamp = clamp;
+            continue;
+        }
+        if (arg == "--fusion-min-energy-kev") {
+            const char* value = needValue("--fusion-min-energy-kev");
+            if (value == nullptr) {
+                return false;
+            }
+            double energy_keV = 0.0;
+            if (!ParseDouble(value, &energy_keV) || energy_keV < 0.0) {
+                std::cerr << "Invalid fusion-min-energy-kev: " << value << "\n";
+                return false;
+            }
+            options->runConfig.fusionMinEnergy_keV = energy_keV;
+            continue;
+        }
+        if (arg == "--fusion-diagnostics-bins") {
+            const char* value = needValue("--fusion-diagnostics-bins");
+            if (value == nullptr) {
+                return false;
+            }
+            std::size_t bins = 0;
+            if (!ParseSizeT(value, &bins) || bins == 0) {
+                std::cerr << "Invalid fusion-diagnostics-bins: " << value << "\n";
+                return false;
+            }
+            options->runConfig.fusionDiagnosticsRadialBins = bins;
+            continue;
+        }
+        if (arg == "--wall-boundary-mode") {
+            const char* value = needValue("--wall-boundary-mode");
+            if (value == nullptr) {
+                return false;
+            }
+            WallBoundaryMode mode = WallBoundaryMode::Reflect;
+            if (!tokamak::ParseWallBoundaryMode(value, &mode)) {
+                std::cerr << "Invalid wall-boundary-mode value: " << value << "\n";
+                return false;
+            }
+            options->runConfig.wallBoundaryMode = mode;
+            continue;
+        }
+        if (arg == "--recycle-fraction") {
+            const char* value = needValue("--recycle-fraction");
+            if (value == nullptr) {
+                return false;
+            }
+            double recycleFraction = 0.0;
+            if (!ParseDouble(value, &recycleFraction) || recycleFraction < 0.0 || recycleFraction > 1.0) {
+                std::cerr << "Invalid recycle-fraction: " << value << " (expected 0 <= fraction <= 1)\n";
+                return false;
+            }
+            options->runConfig.recycleFraction = recycleFraction;
+            continue;
+        }
         if (arg == "--artifacts-root") {
             const char* value = needValue("--artifacts-root");
             if (value == nullptr) {
@@ -578,7 +678,14 @@ int main(int argc, char** argv) {
               << " electrostatic_grid_bins=" << runConfig.electrostaticGridBinCount
               << " electrostatic_tol=" << runConfig.electrostaticSolverTolerance
               << " electrostatic_max_iters=" << runConfig.electrostaticSolverMaxIterations
-              << " electrostatic_omega=" << runConfig.electrostaticSorOmega << "\n";
+              << " electrostatic_omega=" << runConfig.electrostaticSorOmega
+              << " fusion_reactivity_model=" << tokamak::FusionReactivityModelKindName(runConfig.fusionReactivityModelKind)
+              << " fusion_sigma_scale=" << runConfig.fusionCrossSectionScale
+              << " fusion_probability_clamp=" << runConfig.fusionProbabilityClamp
+              << " fusion_min_energy_kev=" << runConfig.fusionMinEnergy_keV
+              << " fusion_bins=" << runConfig.fusionDiagnosticsRadialBins
+              << " wall_mode=" << tokamak::WallBoundaryModeName(runConfig.wallBoundaryMode)
+              << " recycle_fraction=" << runConfig.recycleFraction << "\n";
 
     tokamak::Milestone7ArtifactExporter artifactExporter;
     if (options.exportArtifacts) {

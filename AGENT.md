@@ -35,7 +35,18 @@ The primary goals are:
 - `include/tokamak/collision.hpp`
 - `include/tokamak/diagnostics.hpp`
 - `include/tokamak/engine.hpp`
+- `include/tokamak/viewer/replay_manifest.hpp`
+- `include/tokamak/viewer/replay_snapshot.hpp`
+- `include/tokamak/viewer/replay_loader.hpp`
+- `include/tokamak/viewer/viewer_app.hpp`
 - `src/main.cpp`
+- `src/viewer/main.cpp`
+- `src/viewer/replay_loader.cpp`
+- `src/viewer/replay_manifest.cpp`
+- `src/viewer/replay_snapshot.cpp`
+- `src/viewer/viewer_app.cpp`
+- `src/viewer/gl_renderer.cpp`
+- `src/viewer/camera.cpp`
 - `src/engine.cpp`
 - `src/particle_system.cpp`
 - `src/spatial_grid.cpp`
@@ -47,6 +58,7 @@ The primary goals are:
 - `third_party/googletest/` (local offline test harness compatible with GoogleTest-style APIs)
 
 Legacy monolith and viewer/snapshot files are archived under `legacy/` and are not part of the active build graph.
+Canonical visualization is `tokamak_viewer` (artifact replay, schema v2).
 
 ---
 
@@ -164,7 +176,11 @@ The project is organized conceptually into these components. File names may evol
    - Includes out-of-domain clamp counters and artifact schema `v2` manifests.
    - Must be informative enough to diagnose behavior without reading code.
 
-9. **Validation and benchmarks**
+9. **Viewer replay tooling**
+   - `tokamak_viewer` replays `manifest_v2.json` + snapshot CSV artifacts.
+   - Legacy `.tksnap` viewer path is archived only.
+
+10. **Validation and benchmarks**
    - Analytic tests and runtime benchmarks.
    - Required for safe iteration.
 

@@ -198,6 +198,8 @@ bool Milestone7ArtifactExporter::Start(
     radialRelativePath_ = "radial_profiles_v2.csv";
     magneticFieldRelativePath_ = "magnetic_field_diagnostics_v2.csv";
     electrostaticDiagnosticsRelativePath_ = "electrostatic_diagnostics_v2.csv";
+    fusionReactivityDiagnosticsRelativePath_ = "fusion_reactivity_diagnostics_v2.csv";
+    wallInteractionBridgeRelativePath_ = "wall_interaction_bridge_v2.csv";
     speedHistogramRelativePath_ = "speed_histogram_v2.csv";
     pitchHistogramRelativePath_ = "pitch_angle_histogram_v2.csv";
     solverResidualRelativePath_ = "solver_residuals_v2.csv";
@@ -206,12 +208,16 @@ bool Milestone7ArtifactExporter::Start(
     radialCsv_.open((runDirectoryPath / radialRelativePath_).string(), std::ios::trunc);
     magneticFieldCsv_.open((runDirectoryPath / magneticFieldRelativePath_).string(), std::ios::trunc);
     electrostaticDiagnosticsCsv_.open((runDirectoryPath / electrostaticDiagnosticsRelativePath_).string(), std::ios::trunc);
+    fusionReactivityDiagnosticsCsv_.open((runDirectoryPath / fusionReactivityDiagnosticsRelativePath_).string(), std::ios::trunc);
+    wallInteractionBridgeCsv_.open((runDirectoryPath / wallInteractionBridgeRelativePath_).string(), std::ios::trunc);
     speedHistogramCsv_.open((runDirectoryPath / speedHistogramRelativePath_).string(), std::ios::trunc);
     pitchHistogramCsv_.open((runDirectoryPath / pitchHistogramRelativePath_).string(), std::ios::trunc);
     solverResidualCsv_.open((runDirectoryPath / solverResidualRelativePath_).string(), std::ios::trunc);
 
     if (!summaryCsv_.is_open() || !radialCsv_.is_open() || !magneticFieldCsv_.is_open() ||
         !electrostaticDiagnosticsCsv_.is_open() ||
+        !fusionReactivityDiagnosticsCsv_.is_open() ||
+        !wallInteractionBridgeCsv_.is_open() ||
         !speedHistogramCsv_.is_open() ||
         !pitchHistogramCsv_.is_open() || !solverResidualCsv_.is_open()) {
         SetError("Failed to open one or more artifact CSV files under: " + runDirectory_);
@@ -235,6 +241,16 @@ bool Milestone7ArtifactExporter::Start(
         << "schema_version,step,time_s,electric_field_mode,boundary_condition,charge_assignment,max_electric_field_v_per_m,"
         << "mean_electric_field_v_per_m,solver_iterations,solver_converged,residual_l2\n";
 
+    fusionReactivityDiagnosticsCsv_
+        << "schema_version,step,time_s,reactivity_model,cross_section_scale,probability_clamp,min_energy_kev,"
+        << "fusion_attempts_step,fusion_accepted_step,fusion_weight_attempted_step,fusion_weight_accepted_step,"
+        << "fuel_weight_consumed_d_step,fuel_weight_consumed_t_step,ash_weight_produced_he_step,avg_sigma_m2_step,"
+        << "avg_probability_step,avg_relative_speed_m_per_s_step,fusion_attempts_total,fusion_accepted_total\n";
+
+    wallInteractionBridgeCsv_
+        << "schema_version,step,time_s,wall_mode,recycle_fraction,wall_hit_count_step,wall_impact_energy_j_step,"
+        << "wall_loss_weight_step,wall_hit_count_total,wall_impact_energy_j_total,wall_loss_weight_total\n";
+
     speedHistogramCsv_
         << "schema_version,step,time_s,bin_index,speed_min_m_per_s,speed_max_m_per_s,count,total_samples\n";
 
@@ -245,6 +261,7 @@ bool Milestone7ArtifactExporter::Start(
         << "schema_version,step,time_s,residual_available,residual_l2,solver_name,status,iterations,converged,tolerance,note\n";
 
     if (!summaryCsv_.good() || !radialCsv_.good() || !magneticFieldCsv_.good() || !electrostaticDiagnosticsCsv_.good() ||
+        !fusionReactivityDiagnosticsCsv_.good() || !wallInteractionBridgeCsv_.good() ||
         !speedHistogramCsv_.good() ||
         !pitchHistogramCsv_.good() || !solverResidualCsv_.good()) {
         SetError("Failed to write CSV headers for artifact files");
@@ -281,6 +298,8 @@ bool Milestone7ArtifactExporter::WriteStep(
             !WriteRadialProfileRows(engine, telemetry) ||
             !WriteMagneticFieldDiagnosticsRows(engine, telemetry) ||
             !WriteElectrostaticDiagnosticsRow(runConfig_, telemetry) ||
+            !WriteFusionReactivityDiagnosticsRow(runConfig_, telemetry) ||
+            !WriteWallInteractionBridgeRow(runConfig_, telemetry) ||
             !WriteSpeedHistogramRows(engine, telemetry) ||
             !WritePitchHistogramRows(engine, telemetry) ||
             !WriteSolverResidualRow(telemetry)) {
@@ -308,11 +327,14 @@ bool Milestone7ArtifactExporter::Finish() {
     radialCsv_.flush();
     magneticFieldCsv_.flush();
     electrostaticDiagnosticsCsv_.flush();
+    fusionReactivityDiagnosticsCsv_.flush();
+    wallInteractionBridgeCsv_.flush();
     speedHistogramCsv_.flush();
     pitchHistogramCsv_.flush();
     solverResidualCsv_.flush();
 
     if (!summaryCsv_.good() || !radialCsv_.good() || !magneticFieldCsv_.good() || !electrostaticDiagnosticsCsv_.good() ||
+        !fusionReactivityDiagnosticsCsv_.good() || !wallInteractionBridgeCsv_.good() ||
         !speedHistogramCsv_.good() ||
         !pitchHistogramCsv_.good() || !solverResidualCsv_.good()) {
         SetError("Failed to flush artifact CSV streams");
@@ -402,6 +424,18 @@ bool Milestone7ArtifactExporter::WriteRunConfigJson(const RunConfig& runConfig, 
     out << "    \"solver_max_iterations\": " << runConfig.electrostaticSolverMaxIterations << ",\n";
     out << "    \"sor_omega\": " << runConfig.electrostaticSorOmega << ",\n";
     out << "    \"neutralizing_background_fraction\": " << runConfig.electrostaticNeutralizingBackgroundFraction << "\n";
+    out << "  },\n";
+    out << "  \"fusion_settings\": {\n";
+    out << "    \"reactivity_model\": \"" << FusionReactivityModelKindName(runConfig.fusionReactivityModelKind)
+        << "\",\n";
+    out << "    \"cross_section_scale\": " << runConfig.fusionCrossSectionScale << ",\n";
+    out << "    \"probability_clamp\": " << runConfig.fusionProbabilityClamp << ",\n";
+    out << "    \"min_energy_kev\": " << runConfig.fusionMinEnergy_keV << ",\n";
+    out << "    \"diagnostics_radial_bins\": " << runConfig.fusionDiagnosticsRadialBins << "\n";
+    out << "  },\n";
+    out << "  \"wall_settings\": {\n";
+    out << "    \"boundary_mode\": \"" << WallBoundaryModeName(runConfig.wallBoundaryMode) << "\",\n";
+    out << "    \"recycle_fraction\": " << runConfig.recycleFraction << "\n";
     out << "  }\n";
     out << "}\n";
 
@@ -607,6 +641,70 @@ bool Milestone7ArtifactExporter::WriteElectrostaticDiagnosticsRow(
 
     if (!electrostaticDiagnosticsCsv_.good()) {
         SetError("Failed writing electrostatic diagnostics sidecar row");
+        return false;
+    }
+    return true;
+}
+
+bool Milestone7ArtifactExporter::WriteFusionReactivityDiagnosticsRow(
+    const RunConfig& runConfig,
+    const TelemetrySnapshot& telemetry) {
+    double avgSigma_m2 = std::numeric_limits<double>::quiet_NaN();
+    double avgProbability = std::numeric_limits<double>::quiet_NaN();
+    double avgRelativeSpeed_mPerS = std::numeric_limits<double>::quiet_NaN();
+    if (telemetry.stepCounters.fusionKineticsSamples > 0) {
+        const double invSamples = 1.0 / static_cast<double>(telemetry.stepCounters.fusionKineticsSamples);
+        avgSigma_m2 = telemetry.stepCounters.fusionSigmaSum_m2 * invSamples;
+        avgProbability = telemetry.stepCounters.fusionProbabilitySum * invSamples;
+        avgRelativeSpeed_mPerS = telemetry.stepCounters.fusionRelativeSpeedSum_mPerS * invSamples;
+    }
+
+    fusionReactivityDiagnosticsCsv_ << std::setprecision(std::numeric_limits<double>::max_digits10)
+                                    << kMilestone7OutputSchemaVersion << ','
+                                    << telemetry.step << ','
+                                    << telemetry.time_s << ','
+                                    << FusionReactivityModelKindName(runConfig.fusionReactivityModelKind) << ','
+                                    << runConfig.fusionCrossSectionScale << ','
+                                    << runConfig.fusionProbabilityClamp << ','
+                                    << runConfig.fusionMinEnergy_keV << ','
+                                    << telemetry.stepCounters.fusionAttempts << ','
+                                    << telemetry.stepCounters.fusionAccepted << ','
+                                    << telemetry.stepCounters.fusionWeightAttempted << ','
+                                    << telemetry.stepCounters.fusionWeightAccepted << ','
+                                    << telemetry.stepCounters.fuelWeightConsumedD << ','
+                                    << telemetry.stepCounters.fuelWeightConsumedT << ','
+                                    << telemetry.stepCounters.ashWeightProducedHe << ','
+                                    << avgSigma_m2 << ','
+                                    << avgProbability << ','
+                                    << avgRelativeSpeed_mPerS << ','
+                                    << telemetry.counters.fusionAttempts << ','
+                                    << telemetry.counters.fusionAccepted << '\n';
+
+    if (!fusionReactivityDiagnosticsCsv_.good()) {
+        SetError("Failed writing fusion reactivity diagnostics sidecar row");
+        return false;
+    }
+    return true;
+}
+
+bool Milestone7ArtifactExporter::WriteWallInteractionBridgeRow(
+    const RunConfig& runConfig,
+    const TelemetrySnapshot& telemetry) {
+    wallInteractionBridgeCsv_ << std::setprecision(std::numeric_limits<double>::max_digits10)
+                              << kMilestone7OutputSchemaVersion << ','
+                              << telemetry.step << ','
+                              << telemetry.time_s << ','
+                              << WallBoundaryModeName(runConfig.wallBoundaryMode) << ','
+                              << runConfig.recycleFraction << ','
+                              << telemetry.stepCounters.wallHitCount << ','
+                              << telemetry.stepCounters.wallImpactEnergy_J << ','
+                              << telemetry.stepCounters.wallLossWeight << ','
+                              << telemetry.counters.wallHitCount << ','
+                              << telemetry.counters.wallImpactEnergy_J << ','
+                              << telemetry.counters.wallLossWeight << '\n';
+
+    if (!wallInteractionBridgeCsv_.good()) {
+        SetError("Failed writing wall interaction bridge sidecar row");
         return false;
     }
     return true;
@@ -875,6 +973,12 @@ void Milestone7ArtifactExporter::CloseFiles() {
     }
     if (electrostaticDiagnosticsCsv_.is_open()) {
         electrostaticDiagnosticsCsv_.close();
+    }
+    if (fusionReactivityDiagnosticsCsv_.is_open()) {
+        fusionReactivityDiagnosticsCsv_.close();
+    }
+    if (wallInteractionBridgeCsv_.is_open()) {
+        wallInteractionBridgeCsv_.close();
     }
     if (speedHistogramCsv_.is_open()) {
         speedHistogramCsv_.close();

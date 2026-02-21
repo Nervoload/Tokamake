@@ -26,13 +26,18 @@ CXX_BIN="${CXX:-clang++}"
   src/magnetic_field.cpp \
   src/particle_push.cpp \
   src/particle_system.cpp \
+  src/reactivity.cpp \
   src/spatial_grid.cpp \
   src/telemetry.cpp \
+  src/viewer/replay_loader.cpp \
+  src/viewer/replay_manifest.cpp \
+  src/viewer/replay_snapshot.cpp \
   src/main.cpp \
   -o build_manual/tokamakfusion
 
 "${CXX_BIN}" -std=c++17 -Iinclude -Ithird_party/googletest -Ithird_party/googletest/include \
   -DTOKAMAKFUSION_PATH=\"./build_manual/tokamakfusion\" \
+  -DTOKAMAK_SOURCE_DIR=\"${ROOT_DIR}\" \
   src/artifact_export.cpp \
   src/collision.cpp \
   src/electrostatic_field.cpp \
@@ -41,14 +46,20 @@ CXX_BIN="${CXX:-clang++}"
   src/magnetic_field.cpp \
   src/particle_push.cpp \
   src/particle_system.cpp \
+  src/reactivity.cpp \
   src/spatial_grid.cpp \
   src/telemetry.cpp \
+  src/viewer/replay_loader.cpp \
+  src/viewer/replay_manifest.cpp \
+  src/viewer/replay_snapshot.cpp \
   tests/engine_tests.cpp \
   tests/integration_tests.cpp \
   tests/milestone2_magnetic_field_tests.cpp \
   tests/milestone3_electrostatic_field_tests.cpp \
   tests/milestone6_validation_tests.cpp \
   tests/particle_system_tests.cpp \
+  tests/reactivity_tests.cpp \
+  tests/viewer_replay_tests.cpp \
   third_party/googletest/src/gtest.cc \
   third_party/googletest/src/gtest_main.cc \
   -pthread \

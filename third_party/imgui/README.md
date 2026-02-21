@@ -15,3 +15,4 @@ Required files:
 - `backends/imgui_impl_opengl3.h`
 
 The `Makefile` compiles these files directly for the viewer target.
+The canonical build path uses CMake `tokamak_viewer` with `-DBUILD_VIEWER=ON`.

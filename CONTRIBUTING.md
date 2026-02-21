@@ -2,6 +2,7 @@
 
 This repository uses a single canonical path:
 - CMake modular runtime (`src/main.cpp`, `include/tokamak/*`, `tests/*`).
+- Optional canonical viewer target (`tokamak_viewer`) from `src/viewer/*` when built with `-DBUILD_VIEWER=ON`.
 
 Deprecated monolith files are archived under `legacy/` and are not part of contribution checks.
 Legacy viewer/snapshot tooling is also archived under `legacy/` and excluded from canonical targets.
@@ -40,6 +41,13 @@ From the repository root:
 ```bash
 ./scripts/verify_baseline_m0.sh
 ```
+
+6. Canonical replay viewer build/setup:
+```bash
+cmake -S . -B build -DBUILD_VIEWER=ON
+cmake --build build --target tokamak_viewer
+```
+See `docs/VIEWER_SETUP.md` for vendor prerequisites and run commands.
 
 ## Magnetic profile CLI examples
 

@@ -97,6 +97,7 @@ private:
     ElectrostaticMeshGeometry electrostaticGeometry_;
     ElectrostaticSolveConfig electrostaticSolveConfig_;
     std::vector<double> electrostaticChargeDensity_CPerM3_;
+    std::vector<float> electrostaticEffectiveCharges_C_;
     std::vector<double> electrostaticPotential_V_;
     std::vector<Vec3> electrostaticField_VPerM_;
     SolverResidualSnapshot electrostaticSolverResidualStep_;

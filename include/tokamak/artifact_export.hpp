@@ -44,6 +44,8 @@ private:
     bool WriteRadialProfileRows(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
     bool WriteMagneticFieldDiagnosticsRows(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
     bool WriteElectrostaticDiagnosticsRow(const RunConfig& runConfig, const TelemetrySnapshot& telemetry);
+    bool WriteFusionReactivityDiagnosticsRow(const RunConfig& runConfig, const TelemetrySnapshot& telemetry);
+    bool WriteWallInteractionBridgeRow(const RunConfig& runConfig, const TelemetrySnapshot& telemetry);
     bool WriteSpeedHistogramRows(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
     bool WritePitchHistogramRows(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
     bool WriteSolverResidualRow(const TelemetrySnapshot& telemetry);
@@ -60,6 +62,8 @@ private:
     std::ofstream radialCsv_;
     std::ofstream magneticFieldCsv_;
     std::ofstream electrostaticDiagnosticsCsv_;
+    std::ofstream fusionReactivityDiagnosticsCsv_;
+    std::ofstream wallInteractionBridgeCsv_;
     std::ofstream speedHistogramCsv_;
     std::ofstream pitchHistogramCsv_;
     std::ofstream solverResidualCsv_;
@@ -71,6 +75,8 @@ private:
     std::string radialRelativePath_;
     std::string magneticFieldRelativePath_;
     std::string electrostaticDiagnosticsRelativePath_;
+    std::string fusionReactivityDiagnosticsRelativePath_;
+    std::string wallInteractionBridgeRelativePath_;
     std::string speedHistogramRelativePath_;
     std::string pitchHistogramRelativePath_;
     std::string solverResidualRelativePath_;

@@ -1,6 +1,7 @@
 # Legacy Archive
 
 This directory stores deprecated simulation/viewer code preserved for reference.
+See `legacy/QUARANTINED.md` for quarantine policy and guarantees.
 
 These files are intentionally **not** part of the canonical CMake build/test workflow:
 
@@ -13,7 +14,7 @@ These files are intentionally **not** part of the canonical CMake build/test wor
 - `legacy/shared/src/snapshot_stream.cpp`
 - `legacy/shared/include/*`
 
-Use the modular runtime in `src/main.cpp` + `include/tokamak/*` via CMake targets (`tokamak_core`, `tokamakfusion`, `tokamak_tests`).
+Use the modular runtime in `src/main.cpp` + `include/tokamak/*` via CMake targets (`tokamak_core`, `tokamakfusion`, `tokamak_tests`) and canonical replay viewer target (`tokamak_viewer`).
 
 If legacy code must be compiled for archival debugging, include both header roots:
 - `-Ilegacy/monolith/include`

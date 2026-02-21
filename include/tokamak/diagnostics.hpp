@@ -11,9 +11,23 @@ struct RuntimeCounters {
     uint64_t rejectedInjectionPairs = 0;
     uint64_t rejectedFusionAsh = 0;
     uint64_t outOfDomainCellClampEvents = 0;
+    uint64_t wallHitCount = 0;
     uint64_t fusionAttempts = 0;
     uint64_t fusionAccepted = 0;
+    uint64_t fusionKineticsSamples = 0;
     uint32_t maxReactionsInCell = 0;
+
+    double wallImpactEnergy_J = 0.0;
+    double wallLossWeight = 0.0;
+
+    double fusionWeightAttempted = 0.0;
+    double fusionWeightAccepted = 0.0;
+    double fuelWeightConsumedD = 0.0;
+    double fuelWeightConsumedT = 0.0;
+    double ashWeightProducedHe = 0.0;
+    double fusionSigmaSum_m2 = 0.0;
+    double fusionProbabilitySum = 0.0;
+    double fusionRelativeSpeedSum_mPerS = 0.0;
 };
 
 struct EnergyChargeBudget {

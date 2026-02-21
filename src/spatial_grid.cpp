@@ -15,18 +15,31 @@ SpatialGrid::SpatialGrid(float reactorSize_m, float requestedCellSize_m)
       writeHeads(static_cast<std::size_t>(totalCells), 0) {}
 
 int SpatialGrid::GetCellIndex(const Vec3& position, float offset_m, bool* wasClamped) const {
-    int x = static_cast<int>(std::floor((position.x + offset_m) / cellSize_m));
-    int y = static_cast<int>(std::floor((position.y + offset_m) / cellSize_m));
-    int z = static_cast<int>(std::floor((position.z + offset_m) / cellSize_m));
+    bool clamped = false;
+    const double maxIndex = static_cast<double>(gridWidth - 1);
+    auto clampCellIndex = [&](double coordinate) -> int {
+        if (!std::isfinite(coordinate) || coordinate < 0.0) {
+            clamped = true;
+            return 0;
+        }
+        if (coordinate > maxIndex) {
+            clamped = true;
+            return gridWidth - 1;
+        }
+        return static_cast<int>(coordinate);
+    };
 
-    const bool clamped = (x < 0 || x >= gridWidth || y < 0 || y >= gridWidth || z < 0 || z >= gridWidth);
+    const double xCoord = std::floor((static_cast<double>(position.x) + static_cast<double>(offset_m)) / static_cast<double>(cellSize_m));
+    const double yCoord = std::floor((static_cast<double>(position.y) + static_cast<double>(offset_m)) / static_cast<double>(cellSize_m));
+    const double zCoord = std::floor((static_cast<double>(position.z) + static_cast<double>(offset_m)) / static_cast<double>(cellSize_m));
+
+    const int x = clampCellIndex(xCoord);
+    const int y = clampCellIndex(yCoord);
+    const int z = clampCellIndex(zCoord);
+
     if (wasClamped != nullptr) {
         *wasClamped = clamped;
     }
-
-    x = std::max(0, std::min(x, gridWidth - 1));
-    y = std::max(0, std::min(y, gridWidth - 1));
-    z = std::max(0, std::min(z, gridWidth - 1));
 
     return x + (gridWidth * (y + (gridWidth * z)));
 }

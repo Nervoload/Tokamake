@@ -38,6 +38,9 @@ void TokamakEngine::PrintTelemetry(int step) const {
               << " out-of-domain-clamp: " << snapshot.stepCounters.outOfDomainCellClampEvents
               << " fusion-attempts: " << snapshot.stepCounters.fusionAttempts
               << " fusion-accepted: " << snapshot.stepCounters.fusionAccepted
+              << " fusion-w-attempted: " << snapshot.stepCounters.fusionWeightAttempted
+              << " fusion-w-accepted: " << snapshot.stepCounters.fusionWeightAccepted
+              << " wall-hits: " << snapshot.stepCounters.wallHitCount
               << " max-cell-reaction: " << snapshot.stepCounters.maxReactionsInCell << " | "
               << "Ctrs cap-hit: " << snapshot.counters.particleCapHitEvents
               << " rejected-injection: " << snapshot.counters.rejectedInjectionPairs
@@ -45,6 +48,9 @@ void TokamakEngine::PrintTelemetry(int step) const {
               << " out-of-domain-clamp: " << snapshot.counters.outOfDomainCellClampEvents
               << " fusion-attempts: " << snapshot.counters.fusionAttempts
               << " fusion-accepted: " << snapshot.counters.fusionAccepted
+              << " fusion-w-attempted: " << snapshot.counters.fusionWeightAttempted
+              << " fusion-w-accepted: " << snapshot.counters.fusionWeightAccepted
+              << " wall-hits: " << snapshot.counters.wallHitCount
               << " max-cell-reaction: " << snapshot.counters.maxReactionsInCell
               << std::scientific << std::setprecision(6)
               << " | Bmax_T: " << snapshot.magneticField.maxField_T

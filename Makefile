@@ -22,8 +22,10 @@ debug:
 	./scripts/run_debug.sh
 
 viewer:
-	@echo "Viewer is not part of the canonical build path."
-	@echo "Legacy viewer/engine files are archived under legacy/."
+	@echo "Build the canonical replay viewer with CMake:"
+	@echo "  cmake -S . -B build -DBUILD_VIEWER=ON"
+	@echo "  cmake --build build --target tokamak_viewer"
+	@echo "See docs/VIEWER_SETUP.md for dependency setup."
 
 clean:
 	rm -rf $(BUILD_DIR) $(TEST_BUILD_DIR) $(BENCH_BUILD_DIR) build_manual tokamakfusion tokamakfusion_manifest

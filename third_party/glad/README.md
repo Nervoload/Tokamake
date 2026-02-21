@@ -7,3 +7,4 @@ Place generated GLAD OpenGL loader files here:
 - `src/glad.c`
 
 The `Makefile` expects `src/glad.c` and include headers under this folder.
+The canonical build path uses CMake `tokamak_viewer` with `-DBUILD_VIEWER=ON`.

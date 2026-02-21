@@ -42,7 +42,10 @@ normalize_console "${raw_log}" "${reference_dir}/console.log"
 cp "${run_dir}/summary_v2.csv" "${reference_dir}/summary_v2.csv"
 cp "${run_dir}/radial_profiles_v2.csv" "${reference_dir}/radial_profiles_v2.csv"
 cp "${run_dir}/magnetic_field_diagnostics_v2.csv" "${reference_dir}/magnetic_field_diagnostics_v2.csv"
+cp "${run_dir}/electrostatic_diagnostics_v2.csv" "${reference_dir}/electrostatic_diagnostics_v2.csv"
 cp "${run_dir}/solver_residuals_v2.csv" "${reference_dir}/solver_residuals_v2.csv"
+cp "${run_dir}/manifest_v2.json" "${reference_dir}/manifest_v2.json"
+cp "${run_dir}/run_config_v2.json" "${reference_dir}/run_config_v2.json"
 
 (
   cd "${reference_dir}"
@@ -51,7 +54,10 @@ cp "${run_dir}/solver_residuals_v2.csv" "${reference_dir}/solver_residuals_v2.cs
     summary_v2.csv \
     radial_profiles_v2.csv \
     magnetic_field_diagnostics_v2.csv \
-    solver_residuals_v2.csv > checksums.sha256
+    electrostatic_diagnostics_v2.csv \
+    solver_residuals_v2.csv \
+    manifest_v2.json \
+    run_config_v2.json > checksums.sha256
 )
 
 echo "Milestone 0 baseline captured at ${reference_dir}"

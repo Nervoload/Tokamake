@@ -57,6 +57,16 @@ enum class ChargeAssignmentScheme : uint8_t {
     CIC = 1,
 };
 
+enum class FusionReactivityModelKind : uint8_t {
+    SigmaE_Table = 0,
+};
+
+enum class WallBoundaryMode : uint8_t {
+    Reflect = 0,
+    Absorb = 1,
+    Recycle = 2,
+};
+
 struct CurrentProfilePoint {
     float normalizedMinorRadius = 0.0f;
     float enclosedCurrentFraction = 0.0f;
@@ -184,6 +194,50 @@ inline bool ParseChargeAssignmentScheme(std::string_view text, ChargeAssignmentS
     return false;
 }
 
+inline const char* FusionReactivityModelKindName(FusionReactivityModelKind kind) {
+    switch (kind) {
+        case FusionReactivityModelKind::SigmaE_Table:
+            return "sigmae-table";
+    }
+    return "unknown";
+}
+
+inline bool ParseFusionReactivityModelKind(std::string_view text, FusionReactivityModelKind* outKind) {
+    if (text == "sigmae-table" || text == "SIGMAE_TABLE" || text == "SIGMAE-TABLE") {
+        *outKind = FusionReactivityModelKind::SigmaE_Table;
+        return true;
+    }
+    return false;
+}
+
+inline const char* WallBoundaryModeName(WallBoundaryMode mode) {
+    switch (mode) {
+        case WallBoundaryMode::Reflect:
+            return "reflect";
+        case WallBoundaryMode::Absorb:
+            return "absorb";
+        case WallBoundaryMode::Recycle:
+            return "recycle";
+    }
+    return "unknown";
+}
+
+inline bool ParseWallBoundaryMode(std::string_view text, WallBoundaryMode* outMode) {
+    if (text == "reflect" || text == "REFLECT") {
+        *outMode = WallBoundaryMode::Reflect;
+        return true;
+    }
+    if (text == "absorb" || text == "ABSORB") {
+        *outMode = WallBoundaryMode::Absorb;
+        return true;
+    }
+    if (text == "recycle" || text == "RECYCLE") {
+        *outMode = WallBoundaryMode::Recycle;
+        return true;
+    }
+    return false;
+}
+
 struct TokamakConfig {
     float majorRadius_m = 2.0f;
     float minorRadius_m = 0.5f;
@@ -224,6 +278,14 @@ struct RunConfig {
     uint32_t electrostaticSolverMaxIterations = 5000;
     double electrostaticSorOmega = 1.7;
     double electrostaticNeutralizingBackgroundFraction = 1.0;
+
+    FusionReactivityModelKind fusionReactivityModelKind = FusionReactivityModelKind::SigmaE_Table;
+    double fusionCrossSectionScale = 1.0;
+    double fusionProbabilityClamp = 0.95;
+    double fusionMinEnergy_keV = 0.0;
+    WallBoundaryMode wallBoundaryMode = WallBoundaryMode::Reflect;
+    double recycleFraction = 0.0;
+    std::size_t fusionDiagnosticsRadialBins = 32;
 };
 
 }  // namespace tokamak

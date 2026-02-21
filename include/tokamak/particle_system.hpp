@@ -13,6 +13,13 @@ public:
     explicit ParticleSystem(std::size_t maxParticles = constants::kDefaultMaxParticles);
 
     bool CanInsert(std::size_t count) const;
+    bool AddParticle(
+        const Vec3& position,
+        const Vec3& velocity,
+        float mass_kg,
+        float charge_C,
+        ParticleType type,
+        float weight);
     bool AddParticle(const Vec3& position, const Vec3& velocity, float mass_kg, float charge_C, ParticleType type);
     void MarkDead(std::size_t index);
     void Compact();
@@ -27,6 +34,7 @@ public:
     const std::vector<Vec3>& Velocities() const { return velocities_; }
     const std::vector<float>& Masses() const { return masses_kg_; }
     const std::vector<float>& Charges() const { return charges_C_; }
+    const std::vector<float>& Weights() const { return weights_; }
     const std::vector<float>& ChargeToMass() const { return chargeToMass_; }
     const std::vector<ParticleType>& Species() const { return species_; }
 
@@ -34,6 +42,7 @@ public:
     std::vector<Vec3>& MutableVelocities() { return velocities_; }
     std::vector<float>& MutableMasses() { return masses_kg_; }
     std::vector<float>& MutableCharges() { return charges_C_; }
+    std::vector<float>& MutableWeights() { return weights_; }
     std::vector<float>& MutableChargeToMass() { return chargeToMass_; }
     std::vector<ParticleType>& MutableSpecies() { return species_; }
 
@@ -48,6 +57,7 @@ private:
     std::vector<Vec3> velocities_;
     std::vector<float> masses_kg_;
     std::vector<float> charges_C_;
+    std::vector<float> weights_;
     std::vector<float> chargeToMass_;
     std::vector<ParticleType> species_;
 };

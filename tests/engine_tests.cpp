@@ -88,6 +88,29 @@ TEST(EngineTest, SortGridAccumulatesOutOfDomainClampCounters) {
     EXPECT_GT(snapshot.counters.outOfDomainCellClampEvents, static_cast<uint64_t>(0));
 }
 
+TEST(EngineTest, WallBridgeCountersAccumulateWhileReflectBehaviorRemainsActive) {
+    tokamak::RunConfig config;
+    config.scenario = tokamak::Scenario::ColdVacuum;
+    config.seed = 1337;
+    config.wallBoundaryMode = tokamak::WallBoundaryMode::Recycle;
+    config.recycleFraction = 0.5;
+
+    tokamak::TokamakEngine engine(config);
+    //ASSERT_GT(engine.Particles().Size(), static_cast<std::size_t>(0));
+
+    // Force a near-wall outward trajectory to guarantee at least one reflective hit.
+    engine.MutableParticles().MutablePositions()[0] = tokamak::Vec3(2.49f, 0.0f, 0.49f);
+    engine.MutableParticles().MutableVelocities()[0] = tokamak::Vec3(3.0e5f, 0.0f, 3.0e5f);
+
+    engine.Step(config.timeStep_s);
+    const tokamak::TelemetrySnapshot snapshot = engine.Snapshot(1);
+
+    EXPECT_GT(snapshot.stepCounters.wallHitCount, static_cast<uint64_t>(0));
+    EXPECT_GT(snapshot.stepCounters.wallImpactEnergy_J, 0.0);
+    EXPECT_EQ(snapshot.stepCounters.wallLossWeight, 0.0);
+    EXPECT_EQ(snapshot.counters.wallLossWeight, 0.0);
+}
+
 TEST(EngineTest, MagneticDiagnosticsFiniteAndPositiveWhenFieldPresent) {
     tokamak::RunConfig config;
     config.scenario = tokamak::Scenario::ColdVacuum;
