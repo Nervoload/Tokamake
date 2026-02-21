@@ -128,29 +128,4 @@ You can launch the viewer by pointing it to a run's manifest file or its directo
 ./build/tokamak_viewer --run-dir ./output/runs/<run_id>
 ```
 
-## Development Principles
-
-This project adheres to a set of guiding principles to ensure its quality and trustworthiness as a research tool:
-
-1.  **Correctness before speed**: Components are validated and diagnosed before they are optimized.
-2.  **Scientific honesty**: Placeholders and approximations are clearly labeled to avoid misinterpretation.
-3.  **Determinism for debugging**: All stochastic systems support a fixed-seed mode for reproducible runs.
-4.  **No silent failures**: All failure modes, such as dropped particles, are explicitly logged or counted.
-5.  **Deferred mutation**: Global state is not mutated in ways that would invalidate indices during iteration.
-
-## Acronyms Used
-
-- **CIC**: Cloud-in-Cell
-- **CSV**: Comma-Separated Values
-- **E×B**: E-cross-B (Electric field cross Magnetic field)
-- **Inf**: Infinity
-- **JSON**: JavaScript Object Notation
-- **ML**: Machine Learning
-- **NaN**: Not a Number
-- **NGP**: Nearest-Grid-Point
-- **PIC**: Particle-in-Cell
-- **RNG**: Random Number Generator
-- **SI**: International System of Units
-- **SIMD**: Single Instruction, Multiple Data
-- **SOR**: Successive Over-Relaxation
-- **YAML**: YAML Ain't Markup Language
+Thank you for checking out this project!
