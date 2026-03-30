@@ -34,8 +34,8 @@ std::size_t ElectrostaticCellCount(const ElectrostaticMeshGeometry& geometry);
 
 void DepositChargeDensity(
     const std::vector<Vec3>& positions,
-    const std::vector<float>& charges_C,
-    float macroWeight,
+    const std::vector<double>& charges_C,
+    double macroWeight,
     const ElectrostaticMeshGeometry& geometry,
     ChargeAssignmentScheme assignmentScheme,
     std::vector<double>* chargeDensity_CPerM3);

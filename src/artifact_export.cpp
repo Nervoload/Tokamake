@@ -13,6 +13,13 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
+bool ShouldSampleParticle(uint64_t particleId, std::size_t sampleStride) {
+    if (sampleStride <= 1) {
+        return true;
+    }
+    return ((particleId - 1) % sampleStride) == 0;
+}
+
 std::string JsonEscape(const std::string& text) {
     std::string out;
     out.reserve(text.size() + 8);
@@ -88,6 +95,19 @@ tokamak::Vec3 ApproximateBField(
     const tokamak::PlasmaCurrentProfileConfig& profileConfig,
     const tokamak::Vec3& position) {
     return tokamak::EvaluateMagneticFieldSample(config, profileConfig, position).totalField_T;
+}
+
+double PitchAngleDegrees(const tokamak::Vec3& velocity, const tokamak::Vec3& magneticField) {
+    const double speed = static_cast<double>(velocity.Magnitude());
+    const double fieldMagnitude = static_cast<double>(magneticField.Magnitude());
+    if (speed <= 0.0 || fieldMagnitude <= 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double alignment =
+        static_cast<double>(tokamak::Vec3::Dot(velocity, magneticField)) / (speed * fieldMagnitude);
+    const double clampedAlignment = std::max(-1.0, std::min(1.0, alignment));
+    return std::acos(clampedAlignment) * (180.0 / kPi);
 }
 
 const char* SpeciesName(tokamak::ParticleType species) {
@@ -380,6 +400,11 @@ bool Milestone7ArtifactExporter::WriteRunConfigJson(const RunConfig& runConfig, 
     out << "  \"total_steps\": " << runConfig.totalSteps << ",\n";
     out << "  \"telemetry_every_n_steps\": " << runConfig.telemetryEveryNSteps << ",\n";
     out << "  \"particle_cap\": " << runConfig.particleCap << ",\n";
+    out << "  \"power_on_settings\": {\n";
+    out << "    \"startup_ramp_duration_s\": " << runConfig.startupRampDuration_s << ",\n";
+    out << "    \"fusion_start_delay_s\": " << runConfig.fusionStartDelay_s << ",\n";
+    out << "    \"fusion_ramp_duration_s\": " << runConfig.fusionRampDuration_s << "\n";
+    out << "  },\n";
     out << "  \"tokamak_config\": {\n";
     out << "    \"major_radius_m\": " << tokamakConfig.majorRadius_m << ",\n";
     out << "    \"minor_radius_m\": " << tokamakConfig.minorRadius_m << ",\n";
@@ -490,11 +515,13 @@ bool Milestone7ArtifactExporter::WriteRadialProfileRows(
     const double majorRadius_m = static_cast<double>(config.majorRadius_m);
 
     std::vector<uint64_t> ionCounts(binCount, 0);
-    std::vector<double> energySumKeV(binCount, 0.0);
+    std::vector<double> weightSums(binCount, 0.0);
+    std::vector<double> weightedEnergySumKeV(binCount, 0.0);
 
     const auto& positions = particles.Positions();
     const auto& velocities = particles.Velocities();
     const auto& masses = particles.Masses();
+    const auto& weights = particles.Weights();
     const auto& species = particles.Species();
     for (std::size_t i = 0; i < particles.Size(); ++i) {
         if (species[i] == ParticleType::Dead) {
@@ -510,16 +537,18 @@ bool Milestone7ArtifactExporter::WriteRadialProfileRows(
         }
 
         const double speedSquared = static_cast<double>(Vec3::Dot(velocities[i], velocities[i]));
-        const double kineticEnergyJ = 0.5 * static_cast<double>(masses[i]) * speedSquared;
-        const double kineticEnergyKeV = kineticEnergyJ / (1000.0 * static_cast<double>(constants::kElementaryCharge_C));
+        const double kineticEnergyJ = 0.5 * masses[i] * speedSquared;
+        const double kineticEnergyKeV = kineticEnergyJ / (1000.0 * constants::kElementaryCharge_C);
 
         ++ionCounts[bin];
-        energySumKeV[bin] += kineticEnergyKeV;
+        weightSums[bin] += weights[i];
+        weightedEnergySumKeV[bin] += kineticEnergyKeV * weights[i];
     }
 
-    const std::vector<uint64_t>& fusionBins = engine.FusionAcceptedByRadiusBins();
-    const bool fusionBinCompatible = (fusionBins.size() == binCount);
-    const double macroWeight = static_cast<double>(particles.macroWeight);
+    const std::vector<uint64_t>& fusionCountBins = engine.FusionAcceptedByRadiusBins();
+    const std::vector<double>& fusionWeightBins = engine.FusionAcceptedWeightByRadiusBins();
+    const bool fusionBinCompatible =
+        (fusionCountBins.size() == binCount) && (fusionWeightBins.size() == binCount);
     const double elapsedSeconds = std::max(telemetry.time_s, 0.0);
 
     for (std::size_t bin = 0; bin < binCount; ++bin) {
@@ -530,21 +559,21 @@ bool Milestone7ArtifactExporter::WriteRadialProfileRows(
         const double rCenter = 0.5 * (rInner + rOuter);
 
         const double shellVolume = 2.0 * kPi * kPi * majorRadius_m * (rOuter * rOuter - rInner * rInner);
-        const double weightedCount = static_cast<double>(ionCounts[bin]) * macroWeight;
-        const double density = (shellVolume > 0.0) ? (weightedCount / shellVolume) : 0.0;
-        const double avgEnergyKeV = (ionCounts[bin] > 0)
-            ? (energySumKeV[bin] / static_cast<double>(ionCounts[bin]))
+        const double meanMacroWeight = (ionCounts[bin] > 0)
+            ? (weightSums[bin] / static_cast<double>(ionCounts[bin]))
+            : 0.0;
+        const double density = (shellVolume > 0.0) ? (weightSums[bin] / shellVolume) : 0.0;
+        const double avgEnergyKeV = (weightSums[bin] > 0.0)
+            ? (weightedEnergySumKeV[bin] / weightSums[bin])
             : 0.0;
 
         uint64_t fusionCount = 0;
         bool fusionRatePlaceholder = false;
         double fusionRate = 0.0;
         if (fusionBinCompatible) {
-            fusionCount = fusionBins[bin];
+            fusionCount = fusionCountBins[bin];
             if (elapsedSeconds > 0.0 && shellVolume > 0.0) {
-                fusionRate =
-                    (static_cast<double>(fusionCount) * macroWeight) /
-                    (elapsedSeconds * shellVolume);
+                fusionRate = fusionWeightBins[bin] / (elapsedSeconds * shellVolume);
             } else {
                 fusionRate = 0.0;
             }
@@ -562,7 +591,7 @@ bool Milestone7ArtifactExporter::WriteRadialProfileRows(
                    << rOuter << ','
                    << rCenter << ','
                    << ionCounts[bin] << ','
-                   << macroWeight << ','
+                   << meanMacroWeight << ','
                    << shellVolume << ','
                    << density << ','
                    << avgEnergyKeV << ','
@@ -861,6 +890,8 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
     const auto& masses = particles.Masses();
     const auto& charges = particles.Charges();
     const auto& qOverM = particles.ChargeToMass();
+    const auto& weights = particles.Weights();
+    const auto& ids = particles.Ids();
     const auto& species = particles.Species();
 
     const std::size_t totalParticles = particles.Size();
@@ -868,6 +899,16 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
     const std::size_t sampleStride = (target == 0)
         ? 1
         : std::max<std::size_t>(1, (totalParticles + target - 1) / target);
+    std::size_t sampledParticles = 0;
+    for (std::size_t i = 0; i < totalParticles; ++i) {
+        if (sampledParticles >= target) {
+            break;
+        }
+        if (!ShouldSampleParticle(ids[i], sampleStride)) {
+            continue;
+        }
+        ++sampledParticles;
+    }
 
     std::ostringstream filename;
     filename << "particles_step_" << std::setfill('0') << std::setw(8) << telemetry.step << ".csv";
@@ -881,21 +922,31 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
     }
 
     out << "schema_version,step,time_s,total_particles,sampled_particles,sample_stride,particle_index,species,species_name,"
-        << "x_m,y_m,z_m,vx_m_per_s,vy_m_per_s,vz_m_per_s,mass_kg,charge_c,q_over_m\n";
+        << "x_m,y_m,z_m,vx_m_per_s,vy_m_per_s,vz_m_per_s,mass_kg,charge_c,q_over_m,weight,"
+        << "speed_m_per_s,kinetic_energy_kev,pitch_angle_deg\n";
 
     std::size_t sampledCount = 0;
-    for (std::size_t i = 0; i < totalParticles; i += sampleStride) {
+    for (std::size_t i = 0; i < totalParticles; ++i) {
         if (sampledCount >= target) {
             break;
         }
+        if (!ShouldSampleParticle(ids[i], sampleStride)) {
+            continue;
+        }
+        const double speed = static_cast<double>(velocities[i].Magnitude());
+        const double kineticEnergyJ = 0.5 * masses[i] * speed * speed;
+        const double kineticEnergyKeV = kineticEnergyJ / (1000.0 * constants::kElementaryCharge_C);
+        const Vec3 magneticField =
+            ApproximateBField(engine.Config(), engine.PlasmaCurrentProfile(), positions[i]);
+        const double pitchAngleDeg = PitchAngleDegrees(velocities[i], magneticField);
         out << std::setprecision(std::numeric_limits<double>::max_digits10)
             << kMilestone7OutputSchemaVersion << ','
             << telemetry.step << ','
             << telemetry.time_s << ','
             << totalParticles << ','
-            << target << ','
+            << sampledParticles << ','
             << sampleStride << ','
-            << i << ','
+            << ids[i] << ','
             << static_cast<uint32_t>(species[i]) << ','
             << SpeciesName(species[i]) << ','
             << positions[i].x << ','
@@ -906,7 +957,11 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
             << velocities[i].z << ','
             << masses[i] << ','
             << charges[i] << ','
-            << qOverM[i] << '\n';
+            << qOverM[i] << ','
+            << weights[i] << ','
+            << speed << ','
+            << kineticEnergyKeV << ','
+            << pitchAngleDeg << '\n';
         ++sampledCount;
     }
 

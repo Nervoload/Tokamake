@@ -204,6 +204,9 @@ void PrintUsage(const char* argv0) {
               << "  --fusion-cross-section-scale <value>\n"
               << "  --fusion-probability-clamp <fraction>\n"
               << "  --fusion-min-energy-kev <value>\n"
+              << "  --startup-ramp-ms <value>\n"
+              << "  --fusion-start-delay-ms <value>\n"
+              << "  --fusion-ramp-ms <value>\n"
               << "  --fusion-diagnostics-bins <N>\n"
               << "  --wall-boundary-mode <reflect|absorb|recycle>\n"
               << "  --recycle-fraction <fraction>\n"
@@ -531,6 +534,45 @@ bool ParseArgs(int argc, char** argv, CliOptions* options) {
             options->runConfig.fusionMinEnergy_keV = energy_keV;
             continue;
         }
+        if (arg == "--startup-ramp-ms") {
+            const char* value = needValue("--startup-ramp-ms");
+            if (value == nullptr) {
+                return false;
+            }
+            double duration_ms = 0.0;
+            if (!ParseDouble(value, &duration_ms) || duration_ms < 0.0) {
+                std::cerr << "Invalid startup-ramp-ms: " << value << "\n";
+                return false;
+            }
+            options->runConfig.startupRampDuration_s = duration_ms / 1000.0;
+            continue;
+        }
+        if (arg == "--fusion-start-delay-ms") {
+            const char* value = needValue("--fusion-start-delay-ms");
+            if (value == nullptr) {
+                return false;
+            }
+            double delay_ms = 0.0;
+            if (!ParseDouble(value, &delay_ms) || delay_ms < 0.0) {
+                std::cerr << "Invalid fusion-start-delay-ms: " << value << "\n";
+                return false;
+            }
+            options->runConfig.fusionStartDelay_s = delay_ms / 1000.0;
+            continue;
+        }
+        if (arg == "--fusion-ramp-ms") {
+            const char* value = needValue("--fusion-ramp-ms");
+            if (value == nullptr) {
+                return false;
+            }
+            double duration_ms = 0.0;
+            if (!ParseDouble(value, &duration_ms) || duration_ms < 0.0) {
+                std::cerr << "Invalid fusion-ramp-ms: " << value << "\n";
+                return false;
+            }
+            options->runConfig.fusionRampDuration_s = duration_ms / 1000.0;
+            continue;
+        }
         if (arg == "--fusion-diagnostics-bins") {
             const char* value = needValue("--fusion-diagnostics-bins");
             if (value == nullptr) {
@@ -683,6 +725,9 @@ int main(int argc, char** argv) {
               << " fusion_sigma_scale=" << runConfig.fusionCrossSectionScale
               << " fusion_probability_clamp=" << runConfig.fusionProbabilityClamp
               << " fusion_min_energy_kev=" << runConfig.fusionMinEnergy_keV
+              << " startup_ramp_ms=" << (runConfig.startupRampDuration_s * 1000.0)
+              << " fusion_start_delay_ms=" << (runConfig.fusionStartDelay_s * 1000.0)
+              << " fusion_ramp_ms=" << (runConfig.fusionRampDuration_s * 1000.0)
               << " fusion_bins=" << runConfig.fusionDiagnosticsRadialBins
               << " wall_mode=" << tokamak::WallBoundaryModeName(runConfig.wallBoundaryMode)
               << " recycle_fraction=" << runConfig.recycleFraction << "\n";

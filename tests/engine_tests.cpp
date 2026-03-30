@@ -21,6 +21,25 @@ TEST(EngineTest, NbiInsertionAtomicAtCapacity) {
     EXPECT_GT(engine.Counters().particleCapHitEvents, static_cast<uint64_t>(0));
 }
 
+TEST(EngineTest, StartupRampDelaysInitialBeamInjection) {
+    tokamak::RunConfig config;
+    config.scenario = tokamak::Scenario::NbiIgnition;
+    config.seed = 17;
+    config.startupRampDuration_s = config.timeStep_s * 5.0;
+
+    tokamak::TokamakEngine engine(config);
+    ASSERT_EQ(engine.Particles().Size(), static_cast<std::size_t>(1000));
+
+    engine.Step(config.timeStep_s);
+    EXPECT_EQ(engine.Particles().Size(), static_cast<std::size_t>(1000));
+
+    for (int step = 0; step < 8; ++step) {
+        engine.Step(config.timeStep_s);
+    }
+
+    EXPECT_GT(engine.Particles().Size(), static_cast<std::size_t>(1000));
+}
+
 TEST(EngineTest, CollisionShuffleDeterministicWithSeed) {
     tokamak::RunConfig config;
     config.scenario = tokamak::Scenario::NbiIgnition;
@@ -88,19 +107,18 @@ TEST(EngineTest, SortGridAccumulatesOutOfDomainClampCounters) {
     EXPECT_GT(snapshot.counters.outOfDomainCellClampEvents, static_cast<uint64_t>(0));
 }
 
-TEST(EngineTest, WallBridgeCountersAccumulateWhileReflectBehaviorRemainsActive) {
+TEST(EngineTest, ReflectModePreservesParticlesAndReportsNoWallLossWeight) {
     tokamak::RunConfig config;
     config.scenario = tokamak::Scenario::ColdVacuum;
     config.seed = 1337;
-    config.wallBoundaryMode = tokamak::WallBoundaryMode::Recycle;
-    config.recycleFraction = 0.5;
+    config.wallBoundaryMode = tokamak::WallBoundaryMode::Reflect;
 
     tokamak::TokamakEngine engine(config);
-    //ASSERT_GT(engine.Particles().Size(), static_cast<std::size_t>(0));
+    ASSERT_TRUE(engine.Particles().Size() > static_cast<std::size_t>(0));
 
-    // Force a near-wall outward trajectory to guarantee at least one reflective hit.
     engine.MutableParticles().MutablePositions()[0] = tokamak::Vec3(2.49f, 0.0f, 0.49f);
     engine.MutableParticles().MutableVelocities()[0] = tokamak::Vec3(3.0e5f, 0.0f, 3.0e5f);
+    const std::size_t initialSize = engine.Particles().Size();
 
     engine.Step(config.timeStep_s);
     const tokamak::TelemetrySnapshot snapshot = engine.Snapshot(1);
@@ -109,6 +127,54 @@ TEST(EngineTest, WallBridgeCountersAccumulateWhileReflectBehaviorRemainsActive) 
     EXPECT_GT(snapshot.stepCounters.wallImpactEnergy_J, 0.0);
     EXPECT_EQ(snapshot.stepCounters.wallLossWeight, 0.0);
     EXPECT_EQ(snapshot.counters.wallLossWeight, 0.0);
+    EXPECT_EQ(engine.Particles().Size(), initialSize);
+}
+
+TEST(EngineTest, AbsorbModeRemovesWallHitParticlesAndAccumulatesWallLossWeight) {
+    tokamak::RunConfig config;
+    config.scenario = tokamak::Scenario::ColdVacuum;
+    config.seed = 1338;
+    config.wallBoundaryMode = tokamak::WallBoundaryMode::Absorb;
+
+    tokamak::TokamakEngine engine(config);
+    ASSERT_TRUE(engine.Particles().Size() > static_cast<std::size_t>(0));
+
+    const std::size_t initialSize = engine.Particles().Size();
+    const double initialWeight = engine.Particles().Weights()[0];
+    engine.MutableParticles().MutablePositions()[0] = tokamak::Vec3(2.49f, 0.0f, 0.49f);
+    engine.MutableParticles().MutableVelocities()[0] = tokamak::Vec3(3.0e5f, 0.0f, 3.0e5f);
+
+    engine.Step(config.timeStep_s);
+    const tokamak::TelemetrySnapshot snapshot = engine.Snapshot(1);
+
+    EXPECT_GT(snapshot.stepCounters.wallHitCount, static_cast<uint64_t>(0));
+    EXPECT_NEAR(snapshot.stepCounters.wallLossWeight, initialWeight, 1.0e-6);
+    EXPECT_NEAR(snapshot.counters.wallLossWeight, initialWeight, 1.0e-6);
+    EXPECT_EQ(engine.Particles().Size(), initialSize - 1);
+}
+
+TEST(EngineTest, RecycleModeRetainsConfiguredFractionAndTracksLostWeight) {
+    tokamak::RunConfig config;
+    config.scenario = tokamak::Scenario::ColdVacuum;
+    config.seed = 1339;
+    config.wallBoundaryMode = tokamak::WallBoundaryMode::Recycle;
+    config.recycleFraction = 0.25;
+
+    tokamak::TokamakEngine engine(config);
+    ASSERT_TRUE(engine.Particles().Size() > static_cast<std::size_t>(0));
+
+    const double initialWeight = engine.Particles().Weights()[0];
+    const std::size_t initialSize = engine.Particles().Size();
+    engine.MutableParticles().MutablePositions()[0] = tokamak::Vec3(2.49f, 0.0f, 0.49f);
+    engine.MutableParticles().MutableVelocities()[0] = tokamak::Vec3(3.0e5f, 0.0f, 3.0e5f);
+
+    engine.Step(config.timeStep_s);
+    const tokamak::TelemetrySnapshot snapshot = engine.Snapshot(1);
+
+    EXPECT_GT(snapshot.stepCounters.wallHitCount, static_cast<uint64_t>(0));
+    EXPECT_NEAR(snapshot.stepCounters.wallLossWeight, initialWeight * 0.75, 1.0e-6);
+    EXPECT_NEAR(engine.Particles().Weights()[0], initialWeight * 0.25, 1.0e-6);
+    EXPECT_EQ(engine.Particles().Size(), initialSize);
 }
 
 TEST(EngineTest, MagneticDiagnosticsFiniteAndPositiveWhenFieldPresent) {

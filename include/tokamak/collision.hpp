@@ -16,10 +16,10 @@ struct PendingFusionEvent {
     std::size_t p2 = 0;
     Vec3 centerOfMassPos;
     Vec3 heliumVelocity;
-    float reactedWeight = 0.0f;
-    float relativeSpeed_mPerS = 0.0f;
-    float sigma_m2 = 0.0f;
-    float probability = 0.0f;
+    double reactedWeight = 0.0;
+    double relativeSpeed_mPerS = 0.0;
+    double sigma_m2 = 0.0;
+    double probability = 0.0;
 };
 
 struct CollisionSelectionSummary {
@@ -65,6 +65,7 @@ void ApplyCollisionEvents(
     RuntimeCounters& counters,
     EnergyChargeBudget& budget,
     std::vector<Vec3>* acceptedFusionPositions = nullptr,
+    std::vector<double>* acceptedFusionWeights = nullptr,
     CollisionKineticsSnapshot* outKinetics = nullptr);
 
 }  // namespace tokamak

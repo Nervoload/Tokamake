@@ -16,7 +16,7 @@ struct ArtifactExportConfig {
     std::string outputRootDirectory = "output/runs";
     int metricsEveryNSteps = 100;
     int particleSnapshotEveryNSteps = 100;
-    std::size_t maxParticlesPerSnapshot = 50000;
+    std::size_t maxParticlesPerSnapshot = 6000;
     std::size_t radialBinCount = 32;
     std::size_t speedHistogramBinCount = 40;
     std::size_t pitchHistogramBinCount = 36;

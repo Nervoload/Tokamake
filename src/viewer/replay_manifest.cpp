@@ -76,6 +76,17 @@ bool ExtractFloatField(const std::string& text, const char* key, float* outValue
     return true;
 }
 
+bool ExtractDoubleField(const std::string& text, const char* key, double* outValue) {
+    const std::string pattern = std::string("\"") + key + "\"\\s*:\\s*([-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)";
+    const std::regex re(pattern);
+    std::smatch match;
+    if (!std::regex_search(text, match, re)) {
+        return false;
+    }
+    *outValue = std::stod(match[1].str());
+    return true;
+}
+
 bool ExtractStringArrayField(
     const std::string& text,
     const char* key,
@@ -219,6 +230,16 @@ bool ParseRunConfigV2File(
         parsed.seed = seed;
         parsed.hasSeed = true;
     }
+
+    uint64_t maxParticlesPerSnapshot = 0;
+    if (ExtractUInt64Field(text, "max_particles_per_snapshot", &maxParticlesPerSnapshot)) {
+        parsed.maxParticlesPerSnapshot = maxParticlesPerSnapshot;
+        parsed.hasMaxParticlesPerSnapshot = true;
+    }
+
+    ExtractDoubleField(text, "startup_ramp_duration_s", &parsed.startupRampDuration_s);
+    ExtractDoubleField(text, "fusion_start_delay_s", &parsed.fusionStartDelay_s);
+    ExtractDoubleField(text, "fusion_ramp_duration_s", &parsed.fusionRampDuration_s);
 
     float majorRadius = 0.0f;
     float minorRadius = 0.0f;

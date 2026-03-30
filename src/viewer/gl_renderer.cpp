@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glad/glad.h>
@@ -74,15 +75,19 @@ unsigned int CreateProgram(const char* vertexSource, const char* fragmentSource,
 const char* kPointVertexShader = R"GLSL(
 #version 330 core
 layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec3 aColor;
+layout(location = 1) in vec3 aPositionDelta;
+layout(location = 2) in vec3 aColor;
 
 uniform mat4 uViewProjection;
 uniform float uPointSize;
+uniform float uInterpolationAlpha;
+uniform float uIgnitionIntensity;
 
 out vec3 vColor;
 
 void main() {
-    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+    vec3 simulatedPosition = aPosition + (aPositionDelta * uInterpolationAlpha);
+    gl_Position = uViewProjection * vec4(simulatedPosition, 1.0);
     gl_PointSize = uPointSize;
     vColor = aColor;
 }
@@ -93,12 +98,21 @@ const char* kPointFragmentShader = R"GLSL(
 in vec3 vColor;
 out vec4 fragColor;
 
+uniform float uIgnitionIntensity;
+
 void main() {
     vec2 centered = gl_PointCoord * 2.0 - 1.0;
-    if (dot(centered, centered) > 1.0) {
+    float radiusSq = dot(centered, centered);
+    if (radiusSq > 1.0) {
         discard;
     }
-    fragColor = vec4(vColor, 0.92);
+    float glow = exp(-3.4 * radiusSq);
+    float alpha = mix(0.10, 0.96, glow);
+    vec3 color = vColor * (0.55 + 0.75 * glow);
+    vec3 plasmaGlow = vec3(0.72, 0.20, 1.00) * uIgnitionIntensity * (0.30 + 0.70 * glow);
+    color += plasmaGlow;
+    alpha = min(1.0, alpha + (0.18 * uIgnitionIntensity));
+    fragColor = vec4(color, alpha);
 }
 )GLSL";
 
@@ -108,21 +122,27 @@ layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aColor;
 
 uniform mat4 uViewProjection;
+uniform float uIgnitionIntensity;
 out vec3 vColor;
+out float vIgnitionIntensity;
 
 void main() {
     gl_Position = uViewProjection * vec4(aPosition, 1.0);
     vColor = aColor;
+    vIgnitionIntensity = uIgnitionIntensity;
 }
 )GLSL";
 
 const char* kLineFragmentShader = R"GLSL(
 #version 330 core
 in vec3 vColor;
+in float vIgnitionIntensity;
 out vec4 fragColor;
 
 void main() {
-    fragColor = vec4(vColor, 1.0);
+    vec3 ignitionColor = mix(vColor, vec3(0.76, 0.24, 1.00), 0.70 * vIgnitionIntensity);
+    float alpha = 0.55 + (0.35 * vIgnitionIntensity);
+    fragColor = vec4(ignitionColor, alpha);
 }
 )GLSL";
 
@@ -155,6 +175,16 @@ void PushLine(
     PushVertex(out, b, r, g, bl);
 }
 
+float Clamp01(float value) {
+    return std::max(0.0f, std::min(value, 1.0f));
+}
+
+float Lerp(float a, float b, float t) {
+    return a + ((b - a) * Clamp01(t));
+}
+
+constexpr std::size_t kParticleVertexStrideFloats = 9;
+
 void SpeciesColor(ReplaySpecies species, float* r, float* g, float* b) {
     switch (species) {
         case ReplaySpecies::Deuterium:
@@ -180,10 +210,31 @@ void SpeciesColor(ReplaySpecies species, float* r, float* g, float* b) {
     }
 }
 
+void EnrichParticleColor(const ReplayParticle& particle, float* r, float* g, float* b) {
+    SpeciesColor(particle.species, r, g, b);
+
+    const double kineticEnergyKeV = std::max(0.0, particle.kineticEnergy_keV);
+    const double speed = std::max(0.0, particle.speed_mPerS);
+    const float heat = Clamp01(static_cast<float>(std::log10(1.0 + kineticEnergyKeV) / 3.0));
+    const float speedGlow = Clamp01(static_cast<float>(std::log10(1.0 + speed) / 7.0));
+    const float pitchAccent = std::isfinite(particle.pitchAngle_deg)
+        ? Clamp01(static_cast<float>(std::fabs(90.0 - particle.pitchAngle_deg) / 90.0))
+        : 0.0f;
+
+    const float hotR = 1.00f;
+    const float hotG = Lerp(0.92f, 0.48f, heat);
+    const float hotB = Lerp(0.78f, 0.18f, heat);
+
+    *r = Clamp01(Lerp(*r, hotR, 0.48f * heat) * (0.72f + 0.28f * speedGlow));
+    *g = Clamp01(Lerp(*g, hotG, 0.42f * heat) * (0.72f + 0.28f * speedGlow));
+    *b = Clamp01(Lerp(*b, hotB, 0.42f * heat) + (0.14f * pitchAccent));
+}
+
 }  // namespace
 
 bool GlRenderer::Initialize(std::size_t maxParticles, std::string* errorOut) {
     maxParticles_ = std::max<std::size_t>(1, maxParticles);
+    particleVertexBuffer_.reserve(maxParticles_ * kParticleVertexStrideFloats);
 
     if (!InitializeParticlePipeline(errorOut)) {
         Shutdown();
@@ -212,6 +263,8 @@ bool GlRenderer::InitializeParticlePipeline(std::string* errorOut) {
 
     pointViewProjectionLocation_ = glGetUniformLocation(pointProgram_, "uViewProjection");
     pointSizeLocation_ = glGetUniformLocation(pointProgram_, "uPointSize");
+    pointInterpolationAlphaLocation_ = glGetUniformLocation(pointProgram_, "uInterpolationAlpha");
+    pointIgnitionIntensityLocation_ = glGetUniformLocation(pointProgram_, "uIgnitionIntensity");
 
     glGenVertexArrays(1, &pointVao_);
     glGenBuffers(1, &pointVbo_);
@@ -220,15 +273,17 @@ bool GlRenderer::InitializeParticlePipeline(std::string* errorOut) {
     glBindBuffer(GL_ARRAY_BUFFER, pointVbo_);
     glBufferData(
         GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(maxParticles_ * 6 * sizeof(float)),
+        static_cast<GLsizeiptr>(maxParticles_ * kParticleVertexStrideFloats * sizeof(float)),
         nullptr,
-        GL_DYNAMIC_DRAW);
+        GL_STREAM_DRAW);
 
-    constexpr GLsizei stride = static_cast<GLsizei>(6 * sizeof(float));
+    constexpr GLsizei stride = static_cast<GLsizei>(kParticleVertexStrideFloats * sizeof(float));
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(0));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(6 * sizeof(float)));
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -242,13 +297,14 @@ bool GlRenderer::InitializeLinePipeline(std::string* errorOut) {
     }
 
     lineViewProjectionLocation_ = glGetUniformLocation(lineProgram_, "uViewProjection");
+    lineIgnitionIntensityLocation_ = glGetUniformLocation(lineProgram_, "uIgnitionIntensity");
 
     glGenVertexArrays(1, &lineVao_);
     glGenBuffers(1, &lineVbo_);
 
     glBindVertexArray(lineVao_);
     glBindBuffer(GL_ARRAY_BUFFER, lineVbo_);
-    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_STATIC_DRAW);
 
     constexpr GLsizei stride = static_cast<GLsizei>(6 * sizeof(float));
     glEnableVertexAttribArray(0);
@@ -290,10 +346,31 @@ void GlRenderer::Shutdown() {
 
     uploadedParticles_ = 0;
     lineVertexCount_ = 0;
+    pointInterpolationAlphaLocation_ = -1;
+    pointIgnitionIntensityLocation_ = -1;
+    lineIgnitionIntensityLocation_ = -1;
+    particleVertexBuffer_.clear();
 }
 
 void GlRenderer::SetTorusGeometry(float majorRadius_m, float minorRadius_m) {
     RebuildTorusLines(majorRadius_m, minorRadius_m);
+}
+
+void GlRenderer::EnsureParticleCapacity(std::size_t requiredParticles) {
+    if (requiredParticles <= maxParticles_) {
+        return;
+    }
+
+    maxParticles_ = std::max(requiredParticles, std::max<std::size_t>(maxParticles_ * 2, 1));
+    particleVertexBuffer_.reserve(maxParticles_ * kParticleVertexStrideFloats);
+
+    glBindBuffer(GL_ARRAY_BUFFER, pointVbo_);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>(maxParticles_ * kParticleVertexStrideFloats * sizeof(float)),
+        nullptr,
+        GL_STREAM_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void GlRenderer::RebuildTorusLines(float majorRadius_m, float minorRadius_m) {
@@ -328,44 +405,72 @@ void GlRenderer::RebuildTorusLines(float majorRadius_m, float minorRadius_m) {
         GL_ARRAY_BUFFER,
         static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
         vertices.data(),
-        GL_DYNAMIC_DRAW);
+        GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void GlRenderer::UploadFrame(const ReplayFrame& frame) {
-    const std::size_t count = std::min<std::size_t>(frame.particles.size(), maxParticles_);
+void GlRenderer::UploadFrame(const ReplayFrame& frame, const ReplayFrame* nextFrame) {
+    const std::size_t count = frame.particles.size();
+    EnsureParticleCapacity(std::max<std::size_t>(count, 1));
     uploadedParticles_ = count;
+    particleVertexBuffer_.resize(count * kParticleVertexStrideFloats);
 
-    std::vector<float> vertices;
-    vertices.reserve(count * 6);
+    std::unordered_map<uint64_t, Vec3> nextPositionsById;
+    if (nextFrame != nullptr) {
+        nextPositionsById.reserve(nextFrame->particles.size());
+        for (const ReplayParticle& nextParticle : nextFrame->particles) {
+            nextPositionsById.emplace(nextParticle.particleIndex, nextParticle.position_m);
+        }
+    }
 
     for (std::size_t i = 0; i < count; ++i) {
         const ReplayParticle& particle = frame.particles[i];
         float r = 0.0f;
         float g = 0.0f;
         float b = 0.0f;
-        SpeciesColor(particle.species, &r, &g, &b);
+        EnrichParticleColor(particle, &r, &g, &b);
 
-        vertices.push_back(particle.position_m.x);
-        vertices.push_back(particle.position_m.y);
-        vertices.push_back(particle.position_m.z);
-        vertices.push_back(r);
-        vertices.push_back(g);
-        vertices.push_back(b);
+        Vec3 positionDelta(0.0f, 0.0f, 0.0f);
+        if (!nextPositionsById.empty()) {
+            const auto it = nextPositionsById.find(particle.particleIndex);
+            if (it != nextPositionsById.end()) {
+                positionDelta = it->second - particle.position_m;
+            }
+        }
+
+        const std::size_t base = i * kParticleVertexStrideFloats;
+        particleVertexBuffer_[base + 0] = particle.position_m.x;
+        particleVertexBuffer_[base + 1] = particle.position_m.y;
+        particleVertexBuffer_[base + 2] = particle.position_m.z;
+        particleVertexBuffer_[base + 3] = positionDelta.x;
+        particleVertexBuffer_[base + 4] = positionDelta.y;
+        particleVertexBuffer_[base + 5] = positionDelta.z;
+        particleVertexBuffer_[base + 6] = r;
+        particleVertexBuffer_[base + 7] = g;
+        particleVertexBuffer_[base + 8] = b;
+    }
+
+    if (uploadedParticles_ == 0) {
+        return;
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, pointVbo_);
-    glBufferSubData(
+    glBufferData(
         GL_ARRAY_BUFFER,
-        0,
-        static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-        vertices.data());
+        static_cast<GLsizeiptr>(particleVertexBuffer_.size() * sizeof(float)),
+        particleVertexBuffer_.data(),
+        GL_STREAM_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void GlRenderer::Draw(const Mat4& viewProjection, float pointSizePixels) const {
+void GlRenderer::Draw(
+    const Mat4& viewProjection,
+    float pointSizePixels,
+    float interpolationAlpha,
+    float ignitionIntensity) const {
     glUseProgram(lineProgram_);
     glUniformMatrix4fv(lineViewProjectionLocation_, 1, GL_FALSE, viewProjection.Data());
+    glUniform1f(lineIgnitionIntensityLocation_, std::max(0.0f, std::min(1.0f, ignitionIntensity)));
     glBindVertexArray(lineVao_);
     glDrawArrays(GL_LINES, 0, lineVertexCount_);
     glBindVertexArray(0);
@@ -373,6 +478,8 @@ void GlRenderer::Draw(const Mat4& viewProjection, float pointSizePixels) const {
     glUseProgram(pointProgram_);
     glUniformMatrix4fv(pointViewProjectionLocation_, 1, GL_FALSE, viewProjection.Data());
     glUniform1f(pointSizeLocation_, pointSizePixels);
+    glUniform1f(pointInterpolationAlphaLocation_, std::max(0.0f, std::min(1.0f, interpolationAlpha)));
+    glUniform1f(pointIgnitionIntensityLocation_, std::max(0.0f, std::min(1.0f, ignitionIntensity)));
     glBindVertexArray(pointVao_);
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(uploadedParticles_));
     glBindVertexArray(0);

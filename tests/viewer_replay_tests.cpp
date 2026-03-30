@@ -45,6 +45,11 @@ std::filesystem::path WriteMinimalRunArtifacts(const std::filesystem::path& root
         "  \"schema_version\": 2,\n"
         "  \"scenario\": \"COLD_VACUUM\",\n"
         "  \"seed\": 20260220,\n"
+        "  \"power_on_settings\": {\n"
+        "    \"startup_ramp_duration_s\": 0.00004,\n"
+        "    \"fusion_start_delay_s\": 0.000015,\n"
+        "    \"fusion_ramp_duration_s\": 0.00002\n"
+        "  },\n"
         "  \"tokamak_config\": {\n"
         "    \"major_radius_m\": 2.0,\n"
         "    \"minor_radius_m\": 0.5\n"
@@ -230,6 +235,9 @@ TEST(ViewerReplayTest, ViewerLoaderResolvesRelativePathsFromManifest) {
     const tokamak::viewer::ReplaySummaryPoint* summary = loader.SummaryForStep(0);
     ASSERT_NE(summary, nullptr);
     EXPECT_NEAR(summary->avgEnergy_keV, 0.10, 1.0e-12);
+    EXPECT_NEAR(loader.RunConfig().startupRampDuration_s, 0.00004, 1.0e-12);
+    EXPECT_NEAR(loader.RunConfig().fusionStartDelay_s, 0.000015, 1.0e-12);
+    EXPECT_NEAR(loader.RunConfig().fusionRampDuration_s, 0.00002, 1.0e-12);
 }
 
 TEST(ViewerReplayTest, ViewerLoaderRejectsMissingSnapshotFile) {

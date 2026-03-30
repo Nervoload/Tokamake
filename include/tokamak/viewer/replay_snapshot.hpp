@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -17,9 +18,15 @@ enum class ReplaySpecies : uint8_t {
 };
 
 struct ReplayParticle {
+    uint64_t particleIndex = 0;
     Vec3 position_m;
+    Vec3 velocity_mPerS;
     ReplaySpecies species = ReplaySpecies::Unknown;
     std::string speciesName;
+    double weight = 0.0;
+    double speed_mPerS = 0.0;
+    double kineticEnergy_keV = 0.0;
+    double pitchAngle_deg = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct ReplayFrame {

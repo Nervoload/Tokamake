@@ -10,6 +10,65 @@
 #include "tokamak/particle_push.hpp"
 
 namespace tokamak {
+namespace {
+
+double ClampUnit(double value) {
+    return std::max(0.0, std::min(value, 1.0));
+}
+
+double SmoothStepUnit(double value) {
+    const double clamped = ClampUnit(value);
+    return clamped * clamped * (3.0 - (2.0 * clamped));
+}
+
+struct TokamakWallHit {
+    Vec3 projectedPosition;
+    Vec3 normal;
+    Vec3 coreCenter;
+};
+
+bool ComputeTokamakWallHit(
+    const Vec3& position,
+    float majorRadius_m,
+    float minorRadius_m,
+    TokamakWallHit* outHit,
+    float wallPlacementScale = 0.99f) {
+    const float radialPos = std::sqrt((position.x * position.x) + (position.y * position.y));
+    if (radialPos <= 1.0e-6f) {
+        return false;
+    }
+
+    const Vec3 coreCenter(
+        majorRadius_m * (position.x / radialPos),
+        majorRadius_m * (position.y / radialPos),
+        0.0f);
+    const Vec3 displacement = position - coreCenter;
+    const float radialTube = displacement.Magnitude();
+    if (radialTube < minorRadius_m) {
+        return false;
+    }
+
+    TokamakWallHit hit;
+    hit.coreCenter = coreCenter;
+    hit.normal = displacement.Normalized();
+    hit.projectedPosition = coreCenter + (hit.normal * (minorRadius_m * wallPlacementScale));
+
+    if (outHit != nullptr) {
+        *outHit = hit;
+    }
+    return true;
+}
+
+Vec3 ToroidalTangent(const Vec3& coreCenter) {
+    const Vec3 tangent(-coreCenter.y, coreCenter.x, 0.0f);
+    const Vec3 normalized = tangent.Normalized();
+    if (normalized.Magnitude() <= 1.0e-6f) {
+        return Vec3(0.0f, 1.0f, 0.0f);
+    }
+    return normalized;
+}
+
+}  // namespace
 
 TokamakEngine::TokamakEngine(const RunConfig& runConfig)
     : TokamakEngine(
@@ -27,6 +86,7 @@ TokamakEngine::TokamakEngine(
       particles_(runConfig.particleCap),
       grid_(std::make_unique<SpatialGrid>(config_.majorRadius_m + config_.minorRadius_m, 0.2f)),
       fusionAcceptedByRadiusBins_(std::max<std::size_t>(1, runConfig.fusionDiagnosticsRadialBins), 0),
+      fusionAcceptedWeightByRadiusBins_(std::max<std::size_t>(1, runConfig.fusionDiagnosticsRadialBins), 0.0),
       magneticFieldRadialMean_T_(std::max<std::size_t>(1, runConfig.magneticFieldRadialBinCount), 0.0),
       magneticFieldRadialSum_T_(std::max<std::size_t>(1, runConfig.magneticFieldRadialBinCount), 0.0),
       magneticFieldRadialCounts_(std::max<std::size_t>(1, runConfig.magneticFieldRadialBinCount), 0),
@@ -90,7 +150,7 @@ TokamakEngine::TokamakEngine(
             rad * std::sin(a2));
 
         const ParticleType type = (i % 2 == 0) ? ParticleType::Deuterium : ParticleType::Tritium;
-        const float mass = (type == ParticleType::Deuterium) ? constants::kMassDeuterium_kg : constants::kMassTritium_kg;
+        const double mass = (type == ParticleType::Deuterium) ? constants::kMassDeuterium_kg : constants::kMassTritium_kg;
 
         if (!particles_.AddParticle(pos, Vec3(0.0f, 0.0f, 0.0f), mass, constants::kElementaryCharge_C, type)) {
             ++counters_.particleCapHitEvents;
@@ -103,8 +163,57 @@ TokamakEngine::TokamakEngine(
 #endif
 }
 
+double TokamakEngine::StartupRampFraction(double sampleTime_s) const {
+    if (runConfig_.startupRampDuration_s <= 0.0) {
+        return 1.0;
+    }
+    return SmoothStepUnit(sampleTime_s / runConfig_.startupRampDuration_s);
+}
+
+double TokamakEngine::FusionRampFraction(double sampleTime_s) const {
+    const double startupFraction = StartupRampFraction(sampleTime_s);
+    const double fusionStartTime_s =
+        std::max(0.0, runConfig_.startupRampDuration_s) + std::max(0.0, runConfig_.fusionStartDelay_s);
+
+    if (sampleTime_s < fusionStartTime_s) {
+        return 0.0;
+    }
+
+    if (runConfig_.fusionRampDuration_s <= 0.0) {
+        return startupFraction;
+    }
+
+    const double fusionOnsetFraction =
+        SmoothStepUnit((sampleTime_s - fusionStartTime_s) / runConfig_.fusionRampDuration_s);
+    return startupFraction * fusionOnsetFraction;
+}
+
+TokamakConfig TokamakEngine::EffectiveTokamakConfig(double sampleTime_s) const {
+    TokamakConfig effectiveConfig = config_;
+    const float rampFraction = static_cast<float>(StartupRampFraction(sampleTime_s));
+    effectiveConfig.toroidalCurrent_A *= rampFraction;
+    effectiveConfig.plasmaCurrent_A *= rampFraction;
+    return effectiveConfig;
+}
+
+NBIConfig TokamakEngine::EffectiveNbiConfig(double sampleTime_s) const {
+    NBIConfig effectiveNbi = nbi_;
+    const float rampFraction = static_cast<float>(StartupRampFraction(sampleTime_s));
+    effectiveNbi.particlesPerStep = static_cast<int>(std::lround(
+        static_cast<double>(nbi_.particlesPerStep) * static_cast<double>(rampFraction)));
+    effectiveNbi.isActive = effectiveNbi.isActive && (rampFraction > 0.0f);
+    return effectiveNbi;
+}
+
+RunConfig TokamakEngine::EffectiveCollisionRunConfig(double sampleTime_s) const {
+    RunConfig effectiveRunConfig = runConfig_;
+    effectiveRunConfig.fusionCrossSectionScale *= FusionRampFraction(sampleTime_s);
+    return effectiveRunConfig;
+}
+
 Vec3 TokamakEngine::CalculateBField(const Vec3& position) const {
-    const MagneticFieldSample sample = EvaluateMagneticFieldSample(config_, plasmaCurrentProfile_, position);
+    const MagneticFieldSample sample =
+        EvaluateMagneticFieldSample(EffectiveTokamakConfig(time_s_), plasmaCurrentProfile_, position);
     return sample.totalField_T;
 }
 
@@ -122,7 +231,8 @@ Vec3 TokamakEngine::CalculatePlaceholderEField(const Vec3& position) const {
     }
 
     const Vec3 coreCenter(config_.majorRadius_m * (position.x / R), config_.majorRadius_m * (position.y / R), 0.0f);
-    return (coreCenter - position) * 50.0f;
+    const float startupFraction = static_cast<float>(StartupRampFraction(time_s_));
+    return (coreCenter - position) * (50.0f * startupFraction);
 }
 
 Vec3 TokamakEngine::CalculateElectrostaticEField(const Vec3& position) const {
@@ -134,33 +244,35 @@ Vec3 TokamakEngine::CalculateElectrostaticEField(const Vec3& position) const {
 }
 
 void TokamakEngine::PushParticles(float dt_s) {
+    const TokamakConfig effectiveConfig = EffectiveTokamakConfig(time_s_);
     auto& positions = particles_.MutablePositions();
     auto& velocities = particles_.MutableVelocities();
+    auto& weights = particles_.MutableWeights();
+    auto& species = particles_.MutableSpecies();
     const auto& masses = particles_.Masses();
-    const auto& weights = particles_.Weights();
     const auto& chargeToMass = particles_.ChargeToMass();
+    std::uniform_real_distribution<float> recycleVerticalSpread(-0.25f, 0.25f);
 
     for (std::size_t i = 0; i < positions.size(); ++i) {
+        if (species[i] == ParticleType::Dead) {
+            continue;
+        }
+
         const Vec3 pos = positions[i];
         const Vec3 vel = velocities[i];
-        const float qOverM = chargeToMass[i];
+        const double qOverM = chargeToMass[i];
 
         const Vec3 E = CalculateEField(pos);
         const MagneticFieldSample magneticSample =
-            EvaluateMagneticFieldSample(config_, plasmaCurrentProfile_, pos);
+            EvaluateMagneticFieldSample(effectiveConfig, plasmaCurrentProfile_, pos);
         AccumulateMagneticFieldDiagnosticsSample(magneticSample);
         const Vec3 B = magneticSample.totalField_T;
 
         Vec3 vNew = BorisVelocityStep(vel, E, B, qOverM, dt_s);
         Vec3 posNew = pos + (vNew * dt_s);
-        const Vec3 preWallPos = posNew;
         const Vec3 preWallVel = vNew;
-
-        // M5 seam: keep current behavior reflective while collecting wall-impact counters.
-        ReflectAtTokamakWall(&posNew, &vNew, config_.majorRadius_m, config_.minorRadius_m);
-        const bool wallHit =
-            ((posNew - preWallPos).Magnitude() > 1.0e-8f) || ((vNew - preWallVel).Magnitude() > 1.0e-8f);
-        if (wallHit) {
+        TokamakWallHit wallHitGeometry;
+        if (ComputeTokamakWallHit(posNew, config_.majorRadius_m, config_.minorRadius_m, &wallHitGeometry)) {
             ++counters_.wallHitCount;
             ++stepCounters_.wallHitCount;
 
@@ -169,6 +281,52 @@ void TokamakEngine::PushParticles(float dt_s) {
                 0.5 * static_cast<double>(masses[i]) * speedSq * static_cast<double>(weights[i]);
             counters_.wallImpactEnergy_J += impactEnergy_J;
             stepCounters_.wallImpactEnergy_J += impactEnergy_J;
+
+            double wallLossWeight = 0.0;
+            const bool recycleEligible =
+                (runConfig_.wallBoundaryMode == WallBoundaryMode::Recycle) &&
+                (species[i] == ParticleType::Deuterium || species[i] == ParticleType::Tritium);
+
+            if (runConfig_.wallBoundaryMode == WallBoundaryMode::Reflect) {
+                ReflectAtTokamakWall(&posNew, &vNew, config_.majorRadius_m, config_.minorRadius_m);
+            } else if (runConfig_.wallBoundaryMode == WallBoundaryMode::Absorb || !recycleEligible) {
+                wallLossWeight = weights[i];
+                weights[i] = 0.0;
+                species[i] = ParticleType::Dead;
+                posNew = wallHitGeometry.projectedPosition;
+                vNew = Vec3(0.0f, 0.0f, 0.0f);
+            } else {
+                const double recycleFraction = std::max(0.0, std::min(1.0, runConfig_.recycleFraction));
+                const double recycledWeight = weights[i] * recycleFraction;
+                wallLossWeight = weights[i] - recycledWeight;
+                weights[i] = recycledWeight;
+
+                if (recycledWeight <= 1.0e-9) {
+                    weights[i] = 0.0;
+                    species[i] = ParticleType::Dead;
+                    posNew = wallHitGeometry.projectedPosition;
+                    vNew = Vec3(0.0f, 0.0f, 0.0f);
+                } else {
+                    const Vec3 toroidalTangent = ToroidalTangent(wallHitGeometry.coreCenter);
+                    const float preSpeed = preWallVel.Magnitude();
+                    const float recycleSpeed = std::max(2.0e4f, preSpeed * 0.10f);
+                    const float toroidalSpeed = recycleSpeed * 0.35f;
+                    const float verticalSpeed = recycleSpeed * recycleVerticalSpread(rng_);
+                    Vec3 recycledVelocity =
+                        (wallHitGeometry.normal * -recycleSpeed) +
+                        (toroidalTangent * toroidalSpeed) +
+                        Vec3(0.0f, 0.0f, verticalSpeed);
+                    if (recycledVelocity.Magnitude() <= 1.0e-6f) {
+                        recycledVelocity = wallHitGeometry.normal * -recycleSpeed;
+                    }
+
+                    posNew = wallHitGeometry.projectedPosition + (wallHitGeometry.normal * -0.002f);
+                    vNew = recycledVelocity;
+                }
+            }
+
+            counters_.wallLossWeight += wallLossWeight;
+            stepCounters_.wallLossWeight += wallLossWeight;
         }
 
         velocities[i] = vNew;
@@ -200,7 +358,7 @@ void TokamakEngine::PrepareElectrostaticFieldStep() {
     DepositChargeDensity(
         particles_.Positions(),
         electrostaticEffectiveCharges_C_,
-        1.0f,
+        1.0,
         electrostaticGeometry_,
         electrostaticSolveConfig_.chargeAssignmentScheme,
         &electrostaticChargeDensity_CPerM3_);
@@ -280,19 +438,22 @@ void TokamakEngine::FinalizeMagneticFieldDiagnosticsStep() {
 }
 
 void TokamakEngine::RunNBI(float dt_s) {
-    if (!nbi_.isActive) {
+    const double startupFraction = StartupRampFraction(time_s_);
+    const NBIConfig effectiveNbi = EffectiveNbiConfig(time_s_);
+
+    if (!effectiveNbi.isActive) {
         return;
     }
     if (dt_s <= 0.0f) {
         return;
     }
 
-    const float eJoules = nbi_.beamEnergy_keV * 1000.0f * constants::kElementaryCharge_C;
-    const float speed = std::sqrt((2.0f * eJoules) / constants::kMassDeuterium_kg);
-    const Vec3 beamVel = nbi_.injectionNormal * speed;
+    const double eJoules = static_cast<double>(effectiveNbi.beamEnergy_keV) * 1000.0 * constants::kElementaryCharge_C;
+    const float speed = static_cast<float>(std::sqrt((2.0 * eJoules) / constants::kMassDeuterium_kg));
+    const Vec3 beamVel = effectiveNbi.injectionNormal * speed;
     std::uniform_real_distribution<float> spreadDist(-0.1f, 0.1f);
 
-    nbiPairAccumulator_ += nbiPairsPerSecond_ * static_cast<double>(dt_s);
+    nbiPairAccumulator_ += nbiPairsPerSecond_ * startupFraction * static_cast<double>(dt_s);
     const int pairCount = static_cast<int>(std::floor(nbiPairAccumulator_));
     nbiPairAccumulator_ -= static_cast<double>(pairCount);
 
@@ -305,7 +466,7 @@ void TokamakEngine::RunNBI(float dt_s) {
             break;
         }
 
-        Vec3 spawnPos = nbi_.injectorPos + (nbi_.injectionNormal * config_.minorRadius_m) +
+        Vec3 spawnPos = effectiveNbi.injectorPos + (effectiveNbi.injectionNormal * config_.minorRadius_m) +
                         Vec3(spreadDist(rng_), spreadDist(rng_), spreadDist(rng_));
 
         const bool dAdded = particles_.AddParticle(
@@ -333,8 +494,12 @@ void TokamakEngine::RunNBI(float dt_s) {
         }
 
         const double beamSpeedSq = static_cast<double>(Vec3::Dot(beamVel, beamVel));
-        budget_.beamInjected_J += 0.5 * static_cast<double>(constants::kMassDeuterium_kg) * beamSpeedSq;
-        budget_.beamInjected_J += 0.5 * static_cast<double>(constants::kMassTritium_kg) * beamSpeedSq;
+        const auto& insertedWeights = particles_.Weights();
+        const std::size_t insertedCount = insertedWeights.size();
+        budget_.beamInjected_J +=
+            0.5 * constants::kMassDeuterium_kg * beamSpeedSq * insertedWeights[insertedCount - 2];
+        budget_.beamInjected_J +=
+            0.5 * constants::kMassTritium_kg * beamSpeedSq * insertedWeights[insertedCount - 1];
     }
 }
 
@@ -346,7 +511,9 @@ void TokamakEngine::SortGrid() {
 }
 
 void TokamakEngine::SelectCollisionEvents(float dt_s) {
-    const auto summary = tokamak::SelectCollisionEvents(runConfig_, particles_, *grid_, rng_, dt_s, pendingFusionEvents_);
+    const RunConfig effectiveRunConfig = EffectiveCollisionRunConfig(time_s_ + (0.5 * static_cast<double>(dt_s)));
+    const auto summary =
+        tokamak::SelectCollisionEvents(effectiveRunConfig, particles_, *grid_, rng_, dt_s, pendingFusionEvents_);
     counters_.fusionAttempts += summary.fusionAttempts;
     stepCounters_.fusionAttempts += summary.fusionAttempts;
     counters_.fusionKineticsSamples += summary.fusionKineticsSamples;
@@ -374,7 +541,8 @@ void TokamakEngine::ApplyCollisionEvents() {
         pendingFusionEvents_,
         counters_,
         budget_,
-        &acceptedFusionPositions_);
+        &acceptedFusionPositions_,
+        &acceptedFusionWeights_);
     stepCounters_.particleCapHitEvents += (counters_.particleCapHitEvents - before.particleCapHitEvents);
     stepCounters_.rejectedFusionAsh += (counters_.rejectedFusionAsh - before.rejectedFusionAsh);
     stepCounters_.fusionAccepted += (counters_.fusionAccepted - before.fusionAccepted);
@@ -383,10 +551,14 @@ void TokamakEngine::ApplyCollisionEvents() {
     stepCounters_.fuelWeightConsumedT += (counters_.fuelWeightConsumedT - before.fuelWeightConsumedT);
     stepCounters_.ashWeightProducedHe += (counters_.ashWeightProducedHe - before.ashWeightProducedHe);
 
-    for (const Vec3& position : acceptedFusionPositions_) {
+    for (std::size_t i = 0; i < acceptedFusionPositions_.size(); ++i) {
+        const Vec3& position = acceptedFusionPositions_[i];
         const std::size_t binIndex = FusionRadiusBinIndex(position);
         if (binIndex < fusionAcceptedByRadiusBins_.size()) {
             ++fusionAcceptedByRadiusBins_[binIndex];
+        }
+        if (binIndex < fusionAcceptedWeightByRadiusBins_.size() && i < acceptedFusionWeights_.size()) {
+            fusionAcceptedWeightByRadiusBins_[binIndex] += acceptedFusionWeights_[i];
         }
     }
 }
@@ -414,10 +586,14 @@ void TokamakEngine::Step(float dt_s) {
 #endif
 }
 
-SpeciesCounts TokamakEngine::CountSpecies(double* totalKineticEnergy_J, double* totalCharge_C) const {
+SpeciesCounts TokamakEngine::CountSpecies(
+    double* totalKineticEnergy_J,
+    double* totalCharge_C,
+    double* totalMacroWeight) const {
     SpeciesCounts counts;
     double totalKineticEnergy = 0.0;
     double totalCharge = 0.0;
+    double totalWeight = 0.0;
 
     const auto& velocities = particles_.Velocities();
     const auto& masses = particles_.Masses();
@@ -439,8 +615,9 @@ SpeciesCounts TokamakEngine::CountSpecies(double* totalKineticEnergy_J, double* 
         }
 
         const double speedSq = static_cast<double>(Vec3::Dot(velocities[i], velocities[i]));
-        totalKineticEnergy += 0.5 * static_cast<double>(masses[i]) * speedSq;
-        totalCharge += static_cast<double>(charges[i]) * static_cast<double>(weights[i]);
+        totalKineticEnergy += 0.5 * masses[i] * speedSq * weights[i];
+        totalCharge += charges[i] * weights[i];
+        totalWeight += weights[i];
     }
 
     if (totalKineticEnergy_J != nullptr) {
@@ -448,6 +625,9 @@ SpeciesCounts TokamakEngine::CountSpecies(double* totalKineticEnergy_J, double* 
     }
     if (totalCharge_C != nullptr) {
         *totalCharge_C = totalCharge;
+    }
+    if (totalMacroWeight != nullptr) {
+        *totalMacroWeight = totalWeight;
     }
 
     return counts;
@@ -461,13 +641,13 @@ TelemetrySnapshot TokamakEngine::Snapshot(int step) const {
 
     double totalKineticEnergy_J = 0.0;
     double totalCharge_C = 0.0;
-    snapshot.species = CountSpecies(&totalKineticEnergy_J, &totalCharge_C);
+    double totalMacroWeight = 0.0;
+    snapshot.species = CountSpecies(&totalKineticEnergy_J, &totalCharge_C, &totalMacroWeight);
 
-    const auto alive = snapshot.species.AliveCount();
-    if (alive > 0) {
+    if (totalMacroWeight > 0.0) {
         snapshot.avgEnergy_keV =
-            (totalKineticEnergy_J / static_cast<double>(alive)) /
-            (1000.0 * static_cast<double>(constants::kElementaryCharge_C));
+            (totalKineticEnergy_J / totalMacroWeight) /
+            (1000.0 * constants::kElementaryCharge_C);
     }
 
     snapshot.fusionEvents = particles_.fusionCountTotal;

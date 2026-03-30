@@ -71,19 +71,19 @@ CollisionSelectionSummary SelectCollisionEvents(
                 continue;
             }
 
-            const float reactedWeight = std::max(0.0f, std::min(weights[p1], weights[p2]));
-            if (reactedWeight <= 0.0f) {
+            const double reactedWeight = std::max(0.0, std::min(weights[p1], weights[p2]));
+            if (reactedWeight <= 0.0) {
                 continue;
             }
 
             const Vec3 vRel = velocities[p1] - velocities[p2];
-            const float relativeSpeed_mPerS = vRel.Magnitude();
+            const double relativeSpeed_mPerS = static_cast<double>(vRel.Magnitude());
 
-            const float reducedMass =
+            const double reducedMass =
                 (constants::kMassDeuterium_kg * constants::kMassTritium_kg) /
                 (constants::kMassDeuterium_kg + constants::kMassTritium_kg);
-            const float eKinetic_J = 0.5f * reducedMass * Vec3::Dot(vRel, vRel);
-            const float eKinetic_keV = eKinetic_J / (1000.0f * constants::kElementaryCharge_C);
+            const double eKinetic_J = 0.5 * reducedMass * static_cast<double>(Vec3::Dot(vRel, vRel));
+            const double eKinetic_keV = eKinetic_J / (1000.0 * constants::kElementaryCharge_C);
 
             const double sigma_m2 =
                 (eKinetic_keV < energyThreshold_keV)
@@ -95,16 +95,16 @@ CollisionSelectionSummary SelectCollisionEvents(
 
             ++summary.fusionAttempts;
             ++summary.fusionKineticsSamples;
-            summary.fusionWeightAttempted += static_cast<double>(reactedWeight);
+            summary.fusionWeightAttempted += reactedWeight;
 
-            const double n_eff = static_cast<double>(reactedWeight) / cellVolume_m3;
-            const double lambda = sigma_m2 * static_cast<double>(relativeSpeed_mPerS) * n_eff;
+            const double n_eff = reactedWeight / cellVolume_m3;
+            const double lambda = sigma_m2 * relativeSpeed_mPerS * n_eff;
             const double rawProbability = 1.0 - std::exp(-(lambda * clampedDt_s));
             const double clampedProbability = std::max(0.0, std::min(probabilityClamp, rawProbability));
 
             summary.fusionSigmaSum_m2 += sigma_m2;
             summary.fusionProbabilitySum += clampedProbability;
-            summary.fusionRelativeSpeedSum_mPerS += static_cast<double>(relativeSpeed_mPerS);
+            summary.fusionRelativeSpeedSum_mPerS += relativeSpeed_mPerS;
 
             if (dist01(rng) >= clampedProbability) {
                 continue;
@@ -116,15 +116,15 @@ CollisionSelectionSummary SelectCollisionEvents(
             }
 
             const Vec3 centerOfMassPos = (positions[p1] + positions[p2]) * 0.5f;
-            const float mass1 =
+            const double mass1 =
                 (species1 == ParticleType::Deuterium) ? constants::kMassDeuterium_kg : constants::kMassTritium_kg;
-            const float mass2 =
+            const double mass2 =
                 (species2 == ParticleType::Deuterium) ? constants::kMassDeuterium_kg : constants::kMassTritium_kg;
             const Vec3 centerOfMassVel =
-                (velocities[p1] * mass1 + velocities[p2] * mass2) /
-                (mass1 + mass2);
-            const float alphaEnergy_J = 3.5e6f * constants::kElementaryCharge_C;
-            const float alphaSpeed = std::sqrt((2.0f * alphaEnergy_J) / constants::kMassHelium4_kg);
+                (velocities[p1] * static_cast<float>(mass1) + velocities[p2] * static_cast<float>(mass2)) /
+                static_cast<float>(mass1 + mass2);
+            const double alphaEnergy_J = 3.5e6 * constants::kElementaryCharge_C;
+            const float alphaSpeed = static_cast<float>(std::sqrt((2.0 * alphaEnergy_J) / constants::kMassHelium4_kg));
             const Vec3 heliumVelocity = centerOfMassVel + (randomDir.Normalized() * alphaSpeed);
 
             pendingEvents.push_back(PendingFusionEvent{
@@ -134,11 +134,11 @@ CollisionSelectionSummary SelectCollisionEvents(
                 heliumVelocity,
                 reactedWeight,
                 relativeSpeed_mPerS,
-                static_cast<float>(sigma_m2),
-                static_cast<float>(clampedProbability),
+                sigma_m2,
+                clampedProbability,
             });
             ++reactionsInCell;
-            summary.fusionWeightAccepted += static_cast<double>(reactedWeight);
+            summary.fusionWeightAccepted += reactedWeight;
         }
 
         if (reactionsInCell > summary.maxReactionsInCell) {
@@ -166,9 +166,13 @@ void ApplyCollisionEvents(
     RuntimeCounters& counters,
     EnergyChargeBudget& budget,
     std::vector<Vec3>* acceptedFusionPositions,
+    std::vector<double>* acceptedFusionWeights,
     CollisionKineticsSnapshot* outKinetics) {
     if (acceptedFusionPositions != nullptr) {
         acceptedFusionPositions->clear();
+    }
+    if (acceptedFusionWeights != nullptr) {
+        acceptedFusionWeights->clear();
     }
     if (outKinetics != nullptr) {
         *outKinetics = CollisionKineticsSnapshot{};
@@ -191,48 +195,64 @@ void ApplyCollisionEvents(
             continue;
         }
 
-        float requestedReactedWeight = event.reactedWeight;
-        if (requestedReactedWeight <= 0.0f) {
+        double requestedReactedWeight = event.reactedWeight;
+        if (requestedReactedWeight <= 0.0) {
             // Backward-compatible default for callers that do not set weighted-event fields.
             requestedReactedWeight = std::min(weights[event.p1], weights[event.p2]);
         }
-        const float reactedWeight =
-            std::max(0.0f, std::min(requestedReactedWeight, std::min(weights[event.p1], weights[event.p2])));
-        if (reactedWeight <= 0.0f) {
+        const double reactedWeight =
+            std::max(0.0, std::min(requestedReactedWeight, std::min(weights[event.p1], weights[event.p2])));
+        if (reactedWeight <= 0.0) {
             continue;
         }
 
-        if (!particles.CanInsert(1)) {
+        constexpr double kWeightEpsilon = 1.0e-9;
+        const double remainingWeight1 = weights[event.p1] - reactedWeight;
+        const double remainingWeight2 = weights[event.p2] - reactedWeight;
+        const bool consumeP1 = remainingWeight1 <= kWeightEpsilon;
+        const bool consumeP2 = remainingWeight2 <= kWeightEpsilon;
+
+        if (!particles.CanInsert(1) && !consumeP1 && !consumeP2) {
             ++counters.rejectedFusionAsh;
             ++counters.particleCapHitEvents;
             continue;
+        }
+
+        if (!consumeP1) {
+            weights[event.p1] = remainingWeight1;
+        } else {
+            particles.MarkDead(event.p1);
+        }
+        if (!consumeP2) {
+            weights[event.p2] = remainingWeight2;
+        } else {
+            particles.MarkDead(event.p2);
         }
 
         const bool added = particles.AddParticle(
             event.centerOfMassPos,
             event.heliumVelocity,
             constants::kMassHelium4_kg,
-            constants::kElementaryCharge_C * 2.0f,
+            constants::kElementaryCharge_C * 2.0,
             ParticleType::Helium,
             reactedWeight);
 
         if (!added) {
             ++counters.rejectedFusionAsh;
             ++counters.particleCapHitEvents;
+            if (!consumeP1) {
+                weights[event.p1] += reactedWeight;
+            }
+            if (!consumeP2) {
+                weights[event.p2] += reactedWeight;
+            }
+            if (consumeP1) {
+                particles.RestoreSpecies(event.p1, species1);
+            }
+            if (consumeP2) {
+                particles.RestoreSpecies(event.p2, species2);
+            }
             continue;
-        }
-
-        weights[event.p1] -= reactedWeight;
-        weights[event.p2] -= reactedWeight;
-
-        constexpr float kWeightEpsilon = 1.0e-9f;
-        if (weights[event.p1] <= kWeightEpsilon) {
-            weights[event.p1] = 0.0f;
-            particles.MarkDead(event.p1);
-        }
-        if (weights[event.p2] <= kWeightEpsilon) {
-            weights[event.p2] = 0.0f;
-            particles.MarkDead(event.p2);
         }
 
         ++particles.fusionCountTotal;
@@ -242,9 +262,12 @@ void ApplyCollisionEvents(
         counters.fuelWeightConsumedD += static_cast<double>(reactedWeight);
         counters.fuelWeightConsumedT += static_cast<double>(reactedWeight);
 
-        budget.fusionAlphaInjected_J += static_cast<double>(3.5e6f * constants::kElementaryCharge_C);
+        budget.fusionAlphaInjected_J += reactedWeight * (3.5e6 * constants::kElementaryCharge_C);
         if (acceptedFusionPositions != nullptr) {
             acceptedFusionPositions->push_back(event.centerOfMassPos);
+        }
+        if (acceptedFusionWeights != nullptr) {
+            acceptedFusionWeights->push_back(reactedWeight);
         }
 
         if (outKinetics != nullptr) {

@@ -12,13 +12,13 @@ namespace tokamak {
 
 namespace constants {
 
-constexpr float kPi = 3.14159265359f;
-constexpr float kMu0 = 1.25663706e-6f;
-constexpr float kElementaryCharge_C = 1.60217663e-19f;
-constexpr float kMassDeuterium_kg = 3.3435e-27f;
-constexpr float kMassTritium_kg = 5.0082e-27f;
-constexpr float kMassHelium4_kg = 6.6464e-27f;
-constexpr float kBoltzmann_JPerK = 1.380649e-23f;
+constexpr double kPi = 3.14159265359;
+constexpr double kMu0 = 1.25663706e-6;
+constexpr double kElementaryCharge_C = 1.60217663e-19;
+constexpr double kMassDeuterium_kg = 3.3435e-27;
+constexpr double kMassTritium_kg = 5.0082e-27;
+constexpr double kMassHelium4_kg = 6.6464e-27;
+constexpr double kBoltzmann_JPerK = 1.380649e-23;
 constexpr std::size_t kDefaultMaxParticles = 2500000;
 
 }  // namespace constants
@@ -283,6 +283,9 @@ struct RunConfig {
     double fusionCrossSectionScale = 1.0;
     double fusionProbabilityClamp = 0.95;
     double fusionMinEnergy_keV = 0.0;
+    double startupRampDuration_s = 0.0;
+    double fusionStartDelay_s = 0.0;
+    double fusionRampDuration_s = 0.0;
     WallBoundaryMode wallBoundaryMode = WallBoundaryMode::Reflect;
     double recycleFraction = 0.0;
     std::size_t fusionDiagnosticsRadialBins = 32;

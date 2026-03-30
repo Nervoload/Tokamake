@@ -43,8 +43,15 @@ public:
     uint64_t ActiveSeed() const { return activeSeed_; }
     double SimTimeSeconds() const { return time_s_; }
     const std::vector<uint64_t>& FusionAcceptedByRadiusBins() const { return fusionAcceptedByRadiusBins_; }
+    const std::vector<double>& FusionAcceptedWeightByRadiusBins() const { return fusionAcceptedWeightByRadiusBins_; }
 
 private:
+    double StartupRampFraction(double sampleTime_s) const;
+    double FusionRampFraction(double sampleTime_s) const;
+    TokamakConfig EffectiveTokamakConfig(double sampleTime_s) const;
+    NBIConfig EffectiveNbiConfig(double sampleTime_s) const;
+    RunConfig EffectiveCollisionRunConfig(double sampleTime_s) const;
+
     Vec3 CalculateBField(const Vec3& position) const;
     Vec3 CalculateEField(const Vec3& position) const;
     Vec3 CalculatePlaceholderEField(const Vec3& position) const;
@@ -56,7 +63,7 @@ private:
     void SortGrid();
     void SelectCollisionEvents(float dt_s);
     void ApplyCollisionEvents();
-    SpeciesCounts CountSpecies(double* totalKineticEnergy_J, double* totalCharge_C) const;
+    SpeciesCounts CountSpecies(double* totalKineticEnergy_J, double* totalCharge_C, double* totalMacroWeight) const;
     std::size_t FusionRadiusBinIndex(const Vec3& position) const;
     void ResetMagneticFieldDiagnosticsStep();
     void AccumulateMagneticFieldDiagnosticsSample(const MagneticFieldSample& sample);
@@ -86,7 +93,9 @@ private:
 
     std::vector<PendingFusionEvent> pendingFusionEvents_;
     std::vector<Vec3> acceptedFusionPositions_;
+    std::vector<double> acceptedFusionWeights_;
     std::vector<uint64_t> fusionAcceptedByRadiusBins_;
+    std::vector<double> fusionAcceptedWeightByRadiusBins_;
 
     std::vector<double> magneticFieldRadialMean_T_;
     std::vector<double> magneticFieldRadialSum_T_;
@@ -97,7 +106,7 @@ private:
     ElectrostaticMeshGeometry electrostaticGeometry_;
     ElectrostaticSolveConfig electrostaticSolveConfig_;
     std::vector<double> electrostaticChargeDensity_CPerM3_;
-    std::vector<float> electrostaticEffectiveCharges_C_;
+    std::vector<double> electrostaticEffectiveCharges_C_;
     std::vector<double> electrostaticPotential_V_;
     std::vector<Vec3> electrostaticField_VPerM_;
     SolverResidualSnapshot electrostaticSolverResidualStep_;

@@ -158,7 +158,7 @@ std::size_t CountDataLines(const std::filesystem::path& path) {
 
 }  // namespace
 
-TEST(CollisionTest, FusionNoCapacityNoFuelConsumption) {
+TEST(CollisionTest, FusionAtCapacityReusesConsumedFuelSlot) {
     tokamak::ParticleSystem particles(2);
     EXPECT_TRUE(particles.AddParticle(
         tokamak::Vec3(2.0f, 0.0f, 0.0f),
@@ -189,12 +189,12 @@ TEST(CollisionTest, FusionNoCapacityNoFuelConsumption) {
     });
 
     tokamak::ApplyCollisionEvents(particles, events, counters, budget);
+    particles.Compact();
 
-    EXPECT_EQ(particles.Size(), static_cast<std::size_t>(2));
-    EXPECT_NE(particles.SpeciesAt(0), tokamak::ParticleType::Dead);
-    EXPECT_NE(particles.SpeciesAt(1), tokamak::ParticleType::Dead);
-    EXPECT_EQ(counters.rejectedFusionAsh, static_cast<uint64_t>(1));
-    EXPECT_EQ(counters.fusionAccepted, static_cast<uint64_t>(0));
+    EXPECT_EQ(particles.Size(), static_cast<std::size_t>(1));
+    EXPECT_EQ(particles.SpeciesAt(0), tokamak::ParticleType::Helium);
+    EXPECT_EQ(counters.rejectedFusionAsh, static_cast<uint64_t>(0));
+    EXPECT_EQ(counters.fusionAccepted, static_cast<uint64_t>(1));
 }
 
 TEST(CollisionTest, ApplyCollisionEventsSupportsPartialDepletionAndWeightConservation) {
@@ -232,18 +232,18 @@ TEST(CollisionTest, ApplyCollisionEventsSupportsPartialDepletionAndWeightConserv
     particles.Compact();
 
     EXPECT_EQ(counters.fusionAccepted, static_cast<uint64_t>(1));
-    //EXPECT_DOUBLE_EQ(counters.fusionWeightAccepted, 1.0);
-    //EXPECT_DOUBLE_EQ(counters.fuelWeightConsumedD, 1.0);
-    //EXPECT_DOUBLE_EQ(counters.fuelWeightConsumedT, 1.0);
-    //EXPECT_DOUBLE_EQ(counters.ashWeightProducedHe, 1.0);
+    EXPECT_NEAR(counters.fusionWeightAccepted, 1.0, 1.0e-12);
+    EXPECT_NEAR(counters.fuelWeightConsumedD, 1.0, 1.0e-12);
+    EXPECT_NEAR(counters.fuelWeightConsumedT, 1.0, 1.0e-12);
+    EXPECT_NEAR(counters.ashWeightProducedHe, 1.0, 1.0e-12);
     EXPECT_EQ(particles.Size(), static_cast<std::size_t>(2));
 
     const auto& species = particles.Species();
     const auto& weights = particles.Weights();
     int deuteriumCount = 0;
     int heliumCount = 0;
-    float remainingDeuteriumWeight = 0.0f;
-    float heliumWeight = 0.0f;
+    double remainingDeuteriumWeight = 0.0;
+    double heliumWeight = 0.0;
     for (std::size_t i = 0; i < particles.Size(); ++i) {
         if (species[i] == tokamak::ParticleType::Deuterium) {
             ++deuteriumCount;
@@ -256,8 +256,8 @@ TEST(CollisionTest, ApplyCollisionEventsSupportsPartialDepletionAndWeightConserv
 
     EXPECT_EQ(deuteriumCount, 1);
     EXPECT_EQ(heliumCount, 1);
-    //EXPECT_FLOAT_EQ(remainingDeuteriumWeight, 2.0f);
-    //EXPECT_FLOAT_EQ(heliumWeight, 1.0f);
+    EXPECT_NEAR(remainingDeuteriumWeight, 2.0, 1.0e-12);
+    EXPECT_NEAR(heliumWeight, 1.0, 1.0e-12);
 }
 
 TEST(CollisionTest, CollisionOrderBiasReduced) {
@@ -306,7 +306,7 @@ TEST(CollisionTest, CollisionOrderBiasReduced) {
 }
 
 TEST(IntegrationTest, TelemetryContainsRequiredCountersAndSmokeOutput) {
-    const std::string command = std::string("\"") + //TOKAMAKFUSION_PATH +
+    const std::string command = std::string("\"") + TOKAMAKFUSION_PATH +
                                 "\" --scenario cold --seed 21 --steps 100 --telemetry-every 100";
     const std::string output = RunCommandCapture(command);
 
@@ -367,7 +367,7 @@ TEST(IntegrationTest, CliSupportsCurrentProfileModesAndCustomTablePath) {
 }
 
 TEST(IntegrationTest, CliSupportsElectrostaticModeAndFlags) {
-    const std::string command = std::string("\"") + //TOKAMAKFUSION_PATH +
+    const std::string command = std::string("\"") + TOKAMAKFUSION_PATH +
                                 "\" --scenario cold --seed 613 --steps 4 --telemetry-every 2 --no-artifacts"
                                 " --electric-field-mode electrostatic --electrostatic-bc dirichlet0"
                                 " --charge-assignment cic --electrostatic-grid-bins 8 --electrostatic-tol 1e-5"
@@ -381,7 +381,7 @@ TEST(IntegrationTest, CliSupportsElectrostaticModeAndFlags) {
 }
 
 TEST(IntegrationTest, CliSupportsFusionAndWallControlFlags) {
-    const std::string command = std::string("\"") + //TOKAMAKFUSION_PATH +
+    const std::string command = std::string("\"") + TOKAMAKFUSION_PATH +
                                 "\" --scenario cold --seed 614 --steps 3 --telemetry-every 3 --no-artifacts"
                                 " --fusion-reactivity-model sigmae-table --fusion-cross-section-scale 2.5"
                                 " --fusion-probability-clamp 0.8 --fusion-min-energy-kev 4.0"
@@ -410,7 +410,7 @@ TEST(IntegrationTest, CliRejectsCurrentProfileTableWithoutCustomProfile) {
     }
 
     const std::string command =
-        std::string("\"") + //TOKAMAKFUSION_PATH +
+        std::string("\"") + TOKAMAKFUSION_PATH +
         "\" --scenario cold --seed 990 --steps 1 --telemetry-every 1 --no-artifacts --current-profile uniform"
         " --current-profile-table \"" + tablePath.string() + "\" 2>&1 || true";
     const std::string output = RunCommandCapture(command);
@@ -425,7 +425,7 @@ TEST(IntegrationTest, ArtifactSidecarExistsAndV2HeadersRemainStable) {
         std::filesystem::temp_directory_path() / ("tokamak_m2_artifacts_" + std::to_string(nonce));
     std::filesystem::create_directories(artifactRoot);
 
-    const std::string command = std::string("\"") + //TOKAMAKFUSION_PATH +
+    const std::string command = std::string("\"") + TOKAMAKFUSION_PATH +
                                 "\" --scenario cold --seed 404 --steps 12 --telemetry-every 6"
                                 " --artifact-every 5 --particle-snapshot-every 50 --mag-field-bins 4"
                                 " --current-profile parabolic --artifacts-root \"" +

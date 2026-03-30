@@ -196,6 +196,41 @@ bool ReplayLoader::LoadFrameByOrderedIndex(std::size_t orderedIndex, ReplayFrame
     return true;
 }
 
+bool ReplayLoader::PrefetchFrameByOrderedIndex(std::size_t orderedIndex) {
+    if (orderedIndex >= frameEntries_.size()) {
+        SetError("Prefetch frame index out of range: " + std::to_string(orderedIndex));
+        return false;
+    }
+
+    for (const CachedFrame& cached : cache_) {
+        if (cached.orderedIndex == orderedIndex) {
+            TouchCacheEntry(orderedIndex);
+            return true;
+        }
+    }
+
+    ReplayFrame parsed;
+    if (!LoadFrameUncached(orderedIndex, &parsed)) {
+        return false;
+    }
+
+    InsertCacheEntry(orderedIndex, parsed);
+    return true;
+}
+
+void ReplayLoader::SetCacheCapacity(std::size_t cacheCapacity) {
+    cacheCapacity_ = std::max<std::size_t>(1, cacheCapacity);
+    while (cache_.size() > cacheCapacity_ && !cacheLruOrder_.empty()) {
+        const std::size_t evictIndex = cacheLruOrder_.back();
+        cacheLruOrder_.pop_back();
+        cache_.erase(
+            std::remove_if(cache_.begin(), cache_.end(), [&](const CachedFrame& cached) {
+                return cached.orderedIndex == evictIndex;
+            }),
+            cache_.end());
+    }
+}
+
 bool ReplayLoader::LoadFrameByStep(int step, ReplayFrame* outFrame) {
     const auto it = stepToOrderedIndex_.find(step);
     if (it == stepToOrderedIndex_.end()) {

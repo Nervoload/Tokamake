@@ -28,6 +28,8 @@ public:
 
     bool LoadFrameByOrderedIndex(std::size_t orderedIndex, ReplayFrame* outFrame);
     bool LoadFrameByStep(int step, ReplayFrame* outFrame);
+    bool PrefetchFrameByOrderedIndex(std::size_t orderedIndex);
+    void SetCacheCapacity(std::size_t cacheCapacity);
 
     const ReplaySummaryPoint* SummaryForStep(int step) const;
 
@@ -63,7 +65,7 @@ private:
 
     std::vector<CachedFrame> cache_;
     std::vector<std::size_t> cacheLruOrder_;
-    std::size_t cacheCapacity_ = 3;
+    std::size_t cacheCapacity_ = 24;
 
     std::string lastError_;
 };

@@ -10,7 +10,7 @@ namespace tokamak::viewer {
 struct ViewerCliOptions {
     std::filesystem::path manifestPath;
     std::filesystem::path runDirectory;
-    float pointSizePixels = 3.0f;
+    float pointSizePixels = 3.5f;
     float playbackRate = 1.0f;
     int startStep = -1;
 };

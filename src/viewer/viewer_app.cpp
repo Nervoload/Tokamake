@@ -56,6 +56,92 @@ bool ParseIntValue(const char* text, int* outValue) {
     return true;
 }
 
+std::size_t ClampToSizeT(uint64_t value) {
+    const uint64_t maxValue = static_cast<uint64_t>(std::numeric_limits<std::size_t>::max());
+    return static_cast<std::size_t>(std::min(value, maxValue));
+}
+
+constexpr double kMinDisplayFrameDuration_s = 1.0 / 24.0;
+
+float Clamp01(float value) {
+    return std::max(0.0f, std::min(value, 1.0f));
+}
+
+double Clamp01Double(double value) {
+    return std::max(0.0, std::min(value, 1.0));
+}
+
+double SmoothStep01(double value) {
+    const double clamped = Clamp01Double(value);
+    return clamped * clamped * (3.0 - (2.0 * clamped));
+}
+
+struct PowerOnVisualState {
+    float startupProgress = 1.0f;
+    float fusionGateProgress = 1.0f;
+    float ignitionIntensity = 0.0f;
+    uint64_t recentFusionEvents = 0;
+    std::string label = "steady-state";
+};
+
+PowerOnVisualState ComputePowerOnVisualState(
+    double displayedTime_s,
+    const ReplayRunConfig& runConfig,
+    const ReplaySummaryPoint* summary,
+    const ReplaySummaryPoint* windowStartSummary) {
+    PowerOnVisualState state;
+
+    if (runConfig.startupRampDuration_s > 0.0) {
+        state.startupProgress = static_cast<float>(
+            SmoothStep01(displayedTime_s / runConfig.startupRampDuration_s));
+    }
+
+    const double fusionGateStart_s =
+        std::max(0.0, runConfig.startupRampDuration_s) + std::max(0.0, runConfig.fusionStartDelay_s);
+    if (displayedTime_s < fusionGateStart_s) {
+        state.fusionGateProgress = 0.0f;
+    } else if (runConfig.fusionRampDuration_s > 0.0) {
+        state.fusionGateProgress = static_cast<float>(
+            SmoothStep01((displayedTime_s - fusionGateStart_s) / runConfig.fusionRampDuration_s));
+    } else {
+        state.fusionGateProgress = 1.0f;
+    }
+
+    if (summary != nullptr) {
+        uint64_t windowStartTotal = 0;
+        if (windowStartSummary != nullptr &&
+            windowStartSummary->fusionEventsTotal <= summary->fusionEventsTotal) {
+            windowStartTotal = windowStartSummary->fusionEventsTotal;
+        }
+        state.recentFusionEvents = summary->fusionEventsTotal - windowStartTotal;
+
+        const float recentFusionSignal = Clamp01(
+            static_cast<float>(std::log10(1.0 + static_cast<double>(state.recentFusionEvents)) / 2.0));
+        const float cumulativeFusionSignal = Clamp01(
+            static_cast<float>(std::log10(1.0 + static_cast<double>(summary->fusionEventsTotal)) / 2.4));
+        const float energySignal = Clamp01(static_cast<float>((summary->avgEnergy_keV - 90.0) / 140.0));
+        const float fusionEvidence =
+            std::max((0.65f * recentFusionSignal) + (0.35f * cumulativeFusionSignal), 0.20f * energySignal);
+        state.ignitionIntensity = state.fusionGateProgress * fusionEvidence;
+    }
+
+    if (state.startupProgress < 0.995f) {
+        state.label = "powering magnetics + beam";
+    } else if (state.fusionGateProgress < 0.05f) {
+        state.label = "thermalizing core";
+    } else if (state.recentFusionEvents == 0) {
+        state.label = (state.fusionGateProgress < 0.995f) ? "fusion conditions forming" : "threshold not yet sustained";
+    } else if (state.ignitionIntensity < 0.35f) {
+        state.label = "fusion onset";
+    } else if (state.ignitionIntensity < 0.75f) {
+        state.label = "burn building";
+    } else {
+        state.label = "ignition established";
+    }
+
+    return state;
+}
+
 }  // namespace
 
 ViewerApp::ViewerApp(ViewerCliOptions options)
@@ -200,15 +286,15 @@ int ViewerApp::Run() {
         return 1;
     }
 
+    const auto& orderedSteps = loader_.OrderedSteps();
     std::size_t currentFrameIndex = 0;
     if (options_.startStep >= 0) {
-        const auto& steps = loader_.OrderedSteps();
-        const auto it = std::lower_bound(steps.begin(), steps.end(), options_.startStep);
-        if (it == steps.end() || *it != options_.startStep) {
+        const auto it = std::lower_bound(orderedSteps.begin(), orderedSteps.end(), options_.startStep);
+        if (it == orderedSteps.end() || *it != options_.startStep) {
             std::cerr << "Requested --start-step not found: " << options_.startStep << "\n";
             return 1;
         }
-        currentFrameIndex = static_cast<std::size_t>(std::distance(steps.begin(), it));
+        currentFrameIndex = static_cast<std::size_t>(std::distance(orderedSteps.begin(), it));
     }
 
     ReplayFrame currentFrame;
@@ -257,10 +343,27 @@ int ViewerApp::Run() {
     glfwSetWindowUserPointer(window, &inputState);
     glfwSetScrollCallback(window, ScrollCallback);
 
+    const ReplayRunConfig& runConfig = loader_.RunConfig();
+    std::size_t initialParticleCapacity = std::max<std::size_t>(
+        std::max<std::size_t>(currentFrame.particles.size(), ClampToSizeT(currentFrame.sampledParticles)),
+        1);
+    if (runConfig.hasMaxParticlesPerSnapshot) {
+        initialParticleCapacity = std::max(initialParticleCapacity, ClampToSizeT(runConfig.maxParticlesPerSnapshot));
+    }
+    if (orderedSteps.size() <= 256 && initialParticleCapacity <= 12000) {
+        loader_.SetCacheCapacity(orderedSteps.size());
+        for (std::size_t i = 0; i < orderedSteps.size(); ++i) {
+            if (!loader_.PrefetchFrameByOrderedIndex(i)) {
+                std::cerr << "Frame prefetch error: " << loader_.LastError() << "\n";
+                break;
+            }
+        }
+    }
+
     OrbitCamera camera;
     GlRenderer renderer;
     std::string rendererError;
-    if (!renderer.Initialize(std::max<std::size_t>(currentFrame.particles.size(), 1), &rendererError)) {
+    if (!renderer.Initialize(initialParticleCapacity, &rendererError)) {
         std::cerr << "Failed to initialize renderer: " << rendererError << "\n";
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
@@ -270,22 +373,78 @@ int ViewerApp::Run() {
         return 1;
     }
 
-    const ReplayRunConfig& runConfig = loader_.RunConfig();
     if (runConfig.hasTokamakGeometry) {
         renderer.SetTorusGeometry(runConfig.majorRadius_m, runConfig.minorRadius_m);
     } else {
         renderer.SetTorusGeometry(2.0f, 0.5f);
         std::cerr << "Warning: tokamak geometry not found in run_config_v2.json, using default torus geometry.\n";
     }
-    renderer.UploadFrame(currentFrame);
 
     bool paused = false;
     float playbackRate = options_.playbackRate;
     float pointSize = options_.pointSizePixels;
-    double playbackAccumulator = 0.0;
+    double displayFrameProgress_s = 0.0;
+    ReplayFrame nextFrame;
+    bool hasNextFrame = false;
 
-    const auto appStart = std::chrono::steady_clock::now();
-    auto lastFrameTime = appStart;
+    auto loadAdjacentFrame = [&](std::size_t baseIndex) -> bool {
+        if (baseIndex + 1 >= orderedSteps.size()) {
+            hasNextFrame = false;
+            nextFrame = ReplayFrame();
+            return true;
+        }
+        if (!loader_.LoadFrameByOrderedIndex(baseIndex + 1, &nextFrame)) {
+            std::cerr << "Frame load error: " << loader_.LastError() << "\n";
+            hasNextFrame = false;
+            return false;
+        }
+        hasNextFrame = true;
+        return true;
+    };
+
+    auto prefetchUpcomingFrames = [&](std::size_t baseIndex) {
+        constexpr std::size_t kPrefetchDepth = 12;
+        for (std::size_t offset = 2; offset < (2 + kPrefetchDepth); ++offset) {
+            const std::size_t prefetchIndex = baseIndex + offset;
+            if (prefetchIndex >= orderedSteps.size()) {
+                break;
+            }
+            if (!loader_.PrefetchFrameByOrderedIndex(prefetchIndex)) {
+                std::cerr << "Frame prefetch error: " << loader_.LastError() << "\n";
+                break;
+            }
+        }
+    };
+
+    auto jumpToFrame = [&](std::size_t orderedIndex, bool pausePlayback) -> bool {
+        ReplayFrame loadedFrame;
+        if (!loader_.LoadFrameByOrderedIndex(orderedIndex, &loadedFrame)) {
+            std::cerr << "Frame load error: " << loader_.LastError() << "\n";
+            return false;
+        }
+        currentFrameIndex = orderedIndex;
+        currentFrame = std::move(loadedFrame);
+        displayFrameProgress_s = 0.0;
+        if (!loadAdjacentFrame(currentFrameIndex)) {
+            return false;
+        }
+        renderer.UploadFrame(currentFrame, hasNextFrame ? &nextFrame : nullptr);
+        prefetchUpcomingFrames(currentFrameIndex);
+        paused = pausePlayback || !hasNextFrame;
+        return true;
+    };
+
+    if (!jumpToFrame(currentFrameIndex, false)) {
+        renderer.Shutdown();
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
+    auto lastFrameTime = std::chrono::steady_clock::now();
 
     bool leftDownPrev = false;
 
@@ -327,34 +486,115 @@ int ViewerApp::Run() {
         }
         leftDownPrev = leftDown;
 
-        const auto& orderedSteps = loader_.OrderedSteps();
-        if (!paused && currentFrameIndex + 1 < orderedSteps.size()) {
-            playbackAccumulator += deltaSeconds * static_cast<double>(playbackRate);
-            while (playbackAccumulator >= (1.0 / 30.0) && currentFrameIndex + 1 < orderedSteps.size()) {
-                playbackAccumulator -= (1.0 / 30.0);
+        if (!paused && hasNextFrame) {
+            const double physicalFrameSpan_s = std::max(0.0, nextFrame.time_s - currentFrame.time_s);
+            const double displayFrameSpan_s = std::max(
+                kMinDisplayFrameDuration_s,
+                physicalFrameSpan_s) / std::max(0.1, static_cast<double>(playbackRate));
+            displayFrameProgress_s = std::min(displayFrameProgress_s + deltaSeconds, displayFrameSpan_s);
+
+            if (displayFrameProgress_s >= displayFrameSpan_s) {
+                displayFrameProgress_s = 0.0;
                 ++currentFrameIndex;
-                if (!loader_.LoadFrameByOrderedIndex(currentFrameIndex, &currentFrame)) {
+                currentFrame = std::move(nextFrame);
+                if (!loadAdjacentFrame(currentFrameIndex)) {
                     paused = true;
-                    std::cerr << "Frame load error: " << loader_.LastError() << "\n";
-                    break;
+                } else {
+                    prefetchUpcomingFrames(currentFrameIndex);
+                    renderer.UploadFrame(currentFrame, hasNextFrame ? &nextFrame : nullptr);
+                    if (!hasNextFrame) {
+                        paused = true;
+                    }
                 }
-                renderer.UploadFrame(currentFrame);
             }
         }
 
-        if (ImGui::Begin("Replay Controls")) {
-            ImGui::Text("Run: %s", loader_.Manifest().runId.c_str());
-            ImGui::Text("Frame %zu / %zu", currentFrameIndex + 1, orderedSteps.size());
-            ImGui::Text("Step: %d", currentFrame.step);
-            ImGui::Text("Time: %.6f s", currentFrame.time_s);
-            ImGui::Text("Sampled particles: %zu", currentFrame.particles.size());
-            ImGui::Text("Total particles (reported): %llu", static_cast<unsigned long long>(currentFrame.totalParticles));
+        float interpolationAlpha = 0.0f;
+        double displayedTime_s = currentFrame.time_s;
+        double blendFraction = 0.0;
+        if (!paused && hasNextFrame) {
+            const double physicalFrameSpan_s = std::max(0.0, nextFrame.time_s - currentFrame.time_s);
+            const double displayFrameSpan_s = std::max(
+                kMinDisplayFrameDuration_s,
+                physicalFrameSpan_s) / std::max(0.1, static_cast<double>(playbackRate));
+            if (displayFrameSpan_s > 0.0) {
+                blendFraction = std::max(0.0, std::min(displayFrameProgress_s / displayFrameSpan_s, 1.0));
+            }
+            interpolationAlpha = static_cast<float>(blendFraction);
+            displayedTime_s = currentFrame.time_s + (blendFraction * physicalFrameSpan_s);
+        } else {
+            if (!hasNextFrame) {
+                paused = true;
+            }
+            displayFrameProgress_s = 0.0;
+        }
 
-            const ReplaySummaryPoint* summary = loader_.SummaryForStep(currentFrame.step);
+        const ReplaySummaryPoint* summary = loader_.SummaryForStep(currentFrame.step);
+        const std::size_t fusionWindowStartIndex =
+            (currentFrameIndex > 4) ? (currentFrameIndex - 4) : 0;
+        const ReplaySummaryPoint* fusionWindowStartSummary =
+            loader_.SummaryForStep(orderedSteps[fusionWindowStartIndex]);
+        const PowerOnVisualState powerOnState = ComputePowerOnVisualState(
+            displayedTime_s,
+            runConfig,
+            summary,
+            fusionWindowStartSummary);
+        const float ignitionIntensity = powerOnState.ignitionIntensity;
+
+        if (ImGui::Begin("Replay Controls")) {
+            double sampledWeight = 0.0;
+            double sampledWeightedEnergyKeV = 0.0;
+            double sampledEnergeticWeight = 0.0;
+            double sampledEnergyKeVUnweighted = 0.0;
+            double maxSpeed = 0.0;
+            std::size_t energeticSamples = 0;
+            for (const ReplayParticle& particle : currentFrame.particles) {
+                sampledWeight += particle.weight;
+                maxSpeed = std::max(maxSpeed, particle.speed_mPerS);
+                if (particle.kineticEnergy_keV > 0.0) {
+                    sampledEnergyKeVUnweighted += particle.kineticEnergy_keV;
+                    ++energeticSamples;
+                    if (particle.weight > 0.0) {
+                        sampledWeightedEnergyKeV += particle.kineticEnergy_keV * particle.weight;
+                        sampledEnergeticWeight += particle.weight;
+                    }
+                }
+            }
+
+            ImGui::TextWrapped(
+                "Replaying sampled macro-particles from artifact snapshots. Colors reflect species and energy; "
+                "motion is smoothed between snapshots for readability.");
+            ImGui::TextWrapped("Drag to orbit, scroll to zoom, and use Playback rate to speed up or slow down the replay.");
+            ImGui::Separator();
+            ImGui::Text("Run: %s", loader_.Manifest().runId.c_str());
+            ImGui::Text("Snapshots: %zu total, showing %zu / %zu", orderedSteps.size(), currentFrameIndex + 1, orderedSteps.size());
+            ImGui::Text("Solver step: %d", currentFrame.step);
+            ImGui::Text("Replay time: %.6f s", displayedTime_s);
+            ImGui::Text("Snapshot time: %.6f s", currentFrame.time_s);
+            ImGui::Text("Visible macro-particles: %zu", currentFrame.particles.size());
+            ImGui::Text("Particle slots in snapshot: %llu", static_cast<unsigned long long>(currentFrame.totalParticles));
+            ImGui::Text("Represented ions in sample: %.3e", sampledWeight);
+            ImGui::Text(
+                "Average sampled energy: %.3f keV",
+                sampledEnergeticWeight > 0.0
+                    ? (sampledWeightedEnergyKeV / sampledEnergeticWeight)
+                    : (energeticSamples > 0 ? (sampledEnergyKeVUnweighted / static_cast<double>(energeticSamples)) : 0.0));
+            ImGui::Text("Max sampled speed: %.3e m/s", maxSpeed);
+            ImGui::Text("Blend to next snapshot: %.0f%%", blendFraction * 100.0);
+            ImGui::Text("Core state: %s", powerOnState.label.c_str());
+            ImGui::Text("Power ramp complete: %.0f%%", powerOnState.startupProgress * 100.0f);
+            ImGui::Text("Fusion onset gate: %.0f%%", powerOnState.fusionGateProgress * 100.0f);
+            ImGui::Text("Ignition glow: %.0f%%", ignitionIntensity * 100.0f);
+
             if (summary != nullptr) {
-                ImGui::Text("Summary total ions: %llu", static_cast<unsigned long long>(summary->totalIons));
-                ImGui::Text("Summary avg energy: %.6f keV", summary->avgEnergy_keV);
-                ImGui::Text("Summary fusion events: %llu", static_cast<unsigned long long>(summary->fusionEventsTotal));
+                ImGui::Separator();
+                ImGui::Text("Whole-plasma ions: %llu", static_cast<unsigned long long>(summary->totalIons));
+                ImGui::Text("Whole-plasma avg energy: %.6f keV", summary->avgEnergy_keV);
+                ImGui::Text("Whole-plasma fusion events: %llu", static_cast<unsigned long long>(summary->fusionEventsTotal));
+                ImGui::Text(
+                    "Recent fusion events (%zu snapshots): %llu",
+                    std::min<std::size_t>(5, currentFrameIndex + 1),
+                    static_cast<unsigned long long>(powerOnState.recentFusionEvents));
             } else {
                 ImGui::TextUnformatted("Summary row not found for this step.");
             }
@@ -364,12 +604,7 @@ int ViewerApp::Run() {
             }
             ImGui::SameLine();
             if (ImGui::Button("Restart")) {
-                paused = false;
-                currentFrameIndex = 0;
-                playbackAccumulator = 0.0;
-                if (loader_.LoadFrameByOrderedIndex(currentFrameIndex, &currentFrame)) {
-                    renderer.UploadFrame(currentFrame);
-                }
+                jumpToFrame(0, false);
             }
 
             ImGui::SliderFloat("Playback rate", &playbackRate, 0.1f, 8.0f, "%.2fx");
@@ -377,12 +612,7 @@ int ViewerApp::Run() {
 
             int frameSlider = static_cast<int>(currentFrameIndex);
             if (ImGui::SliderInt("Frame", &frameSlider, 0, static_cast<int>(orderedSteps.size() - 1))) {
-                currentFrameIndex = static_cast<std::size_t>(frameSlider);
-                playbackAccumulator = 0.0;
-                paused = true;
-                if (loader_.LoadFrameByOrderedIndex(currentFrameIndex, &currentFrame)) {
-                    renderer.UploadFrame(currentFrame);
-                }
+                jumpToFrame(static_cast<std::size_t>(frameSlider), true);
             }
 
             if (!runConfig.hasTokamakGeometry) {
@@ -391,9 +621,13 @@ int ViewerApp::Run() {
         }
         ImGui::End();
 
-        glClearColor(0.03f, 0.05f, 0.08f, 1.0f);
+        glClearColor(
+            0.03f + (0.06f * ignitionIntensity),
+            0.05f + (0.01f * ignitionIntensity),
+            0.08f + (0.10f * ignitionIntensity),
+            1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        renderer.Draw(camera.ViewProjectionMatrix(), pointSize);
+        renderer.Draw(camera.ViewProjectionMatrix(), pointSize, interpolationAlpha, ignitionIntensity);
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

@@ -69,7 +69,7 @@ TEST(Milestone3ElectrostaticFieldTest, DepositChargeDensityProducesFiniteValues)
         tokamak::Vec3(0.1f, -0.2f, 0.3f),
         tokamak::Vec3(-0.3f, 0.2f, -0.1f),
     };
-    const std::vector<float> charges = {
+    const std::vector<double> charges = {
         tokamak::constants::kElementaryCharge_C,
         tokamak::constants::kElementaryCharge_C,
     };
@@ -77,7 +77,7 @@ TEST(Milestone3ElectrostaticFieldTest, DepositChargeDensityProducesFiniteValues)
     tokamak::DepositChargeDensity(
         positions,
         charges,
-        1.0e10f,
+        1.0e10,
         geometry,
         tokamak::ChargeAssignmentScheme::CIC,
         &rho);
@@ -98,13 +98,13 @@ TEST(Milestone3ElectrostaticFieldTest, CicDepositConservesTotalCharge) {
         tokamak::Vec3(0.1f, 1.0f, -0.8f),
         tokamak::Vec3(-1.1f, -0.6f, 0.7f),
     };
-    const std::vector<float> charges = {
+    const std::vector<double> charges = {
         tokamak::constants::kElementaryCharge_C,
         tokamak::constants::kElementaryCharge_C,
         tokamak::constants::kElementaryCharge_C,
         -tokamak::constants::kElementaryCharge_C,
     };
-    constexpr float kMacroWeight = 4.2e9f;
+    constexpr double kMacroWeight = 4.2e9;
 
     tokamak::DepositChargeDensity(
         positions,
@@ -118,8 +118,8 @@ TEST(Milestone3ElectrostaticFieldTest, CicDepositConservesTotalCharge) {
     const double depositedCharge_C = std::accumulate(rho.begin(), rho.end(), 0.0) * cellVolume_m3;
 
     double expectedCharge_C = 0.0;
-    for (const float charge : charges) {
-        expectedCharge_C += static_cast<double>(charge) * static_cast<double>(kMacroWeight);
+    for (const double charge : charges) {
+        expectedCharge_C += charge * kMacroWeight;
     }
 
     EXPECT_NEAR(depositedCharge_C, expectedCharge_C, std::max(1.0e-18, std::abs(expectedCharge_C) * 1.0e-5));
@@ -180,7 +180,7 @@ TEST(Milestone3ElectrostaticFieldTest, CicProducesSmootherFieldThanNgpForSameCha
     std::uniform_real_distribution<float> posDist(-2.2f, 2.2f);
 
     std::vector<tokamak::Vec3> positions;
-    std::vector<float> charges;
+    std::vector<double> charges;
     positions.reserve(600);
     charges.reserve(600);
     for (int i = 0; i < 600; ++i) {
@@ -196,7 +196,7 @@ TEST(Milestone3ElectrostaticFieldTest, CicProducesSmootherFieldThanNgpForSameCha
 
     auto roughnessForScheme = [&](tokamak::ChargeAssignmentScheme scheme) {
         std::vector<double> rho;
-        tokamak::DepositChargeDensity(positions, charges, 1.0e9f, geometry, scheme, &rho);
+        tokamak::DepositChargeDensity(positions, charges, 1.0e9, geometry, scheme, &rho);
         tokamak::ApplyNeutralizingBackground(1.0, &rho);
 
         std::vector<double> potential;

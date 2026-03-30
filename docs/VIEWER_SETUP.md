@@ -3,6 +3,30 @@
 ## Overview
 `tokamak_viewer` replays artifact schema v2 runs from `manifest_v2.json` + snapshot CSV files.
 
+## One-Line Run
+From the repository root:
+
+```bash
+./scripts/run_full_system.sh
+```
+
+That command configures a Debug build with `BUILD_VIEWER=ON`, builds `tokamakfusion` and `tokamak_viewer`, runs a replay-producing simulation, resolves the emitted artifact run directory, and launches the viewer on that run automatically.
+
+Common overrides:
+
+```bash
+PROFILE=baseline SIM_DURATION_MS=0.24 ./scripts/run_full_system.sh
+STARTUP_RAMP_MS=0.08 FUSION_START_DELAY_MS=0.03 FUSION_RAMP_MS=0.05 ./scripts/run_full_system.sh
+SIM_DURATION_MS=0.50 SNAPSHOTS_PER_MS=600 ./scripts/run_full_system.sh
+POINT_SIZE=4 PLAYBACK_RATE=0.75 ./scripts/run_full_system.sh
+./scripts/run_full_system.sh --no-viewer
+```
+
+The default `PROFILE=fusion` run now includes a staged power-on sequence:
+- `STARTUP_RAMP_MS`: ramps beam throughput and confinement up gradually.
+- `FUSION_START_DELAY_MS`: holds the fusion onset gate briefly after power-up.
+- `FUSION_RAMP_MS`: eases fusion onset in instead of switching it on instantly.
+
 ## Build Flags
 - `-DBUILD_VIEWER=ON`: enables viewer target.
 - `-DVIEWER_STRICT_VENDOR_CHECK=ON`: fail configure if required ImGui/GLAD vendor files are missing.

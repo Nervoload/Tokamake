@@ -32,6 +32,11 @@ struct ReplayRunConfig {
     bool hasTokamakGeometry = false;
     float majorRadius_m = 2.0f;
     float minorRadius_m = 0.5f;
+    uint64_t maxParticlesPerSnapshot = 0;
+    bool hasMaxParticlesPerSnapshot = false;
+    double startupRampDuration_s = 0.0;
+    double fusionStartDelay_s = 0.0;
+    double fusionRampDuration_s = 0.0;
     std::string scenario;
     uint64_t seed = 0;
     bool hasSeed = false;

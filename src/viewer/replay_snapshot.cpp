@@ -92,6 +92,18 @@ bool LookupColumn(
     return true;
 }
 
+bool FindOptionalColumn(
+    const std::unordered_map<std::string, std::size_t>& headerToIndex,
+    const char* name,
+    std::size_t* outIndex) {
+    const auto it = headerToIndex.find(name);
+    if (it == headerToIndex.end()) {
+        return false;
+    }
+    *outIndex = it->second;
+    return true;
+}
+
 }  // namespace
 
 ReplaySpecies ParseReplaySpeciesName(const std::string& speciesName) {
@@ -145,10 +157,18 @@ bool ParseParticleSnapshotCsv(
     std::size_t totalParticlesColumn = 0;
     std::size_t sampledParticlesColumn = 0;
     std::size_t sampleStrideColumn = 0;
+    std::size_t particleIndexColumn = 0;
     std::size_t speciesNameColumn = 0;
     std::size_t xColumn = 0;
     std::size_t yColumn = 0;
     std::size_t zColumn = 0;
+    std::size_t vxColumn = 0;
+    std::size_t vyColumn = 0;
+    std::size_t vzColumn = 0;
+    std::size_t weightColumn = 0;
+    std::size_t speedColumn = 0;
+    std::size_t kineticEnergyColumn = 0;
+    std::size_t pitchAngleColumn = 0;
 
     if (!LookupColumn(headerToIndex, "step", &stepColumn, errorOut) ||
         !LookupColumn(headerToIndex, "time_s", &timeColumn, errorOut) ||
@@ -162,9 +182,37 @@ bool ParseParticleSnapshotCsv(
         return false;
     }
 
-    const std::size_t maxRequiredColumn = std::max(
+    const bool hasParticleIndex = FindOptionalColumn(headerToIndex, "particle_index", &particleIndexColumn);
+    const bool hasVelocity =
+        FindOptionalColumn(headerToIndex, "vx_m_per_s", &vxColumn) &&
+        FindOptionalColumn(headerToIndex, "vy_m_per_s", &vyColumn) &&
+        FindOptionalColumn(headerToIndex, "vz_m_per_s", &vzColumn);
+    const bool hasWeight = FindOptionalColumn(headerToIndex, "weight", &weightColumn);
+    const bool hasSpeed = FindOptionalColumn(headerToIndex, "speed_m_per_s", &speedColumn);
+    const bool hasKineticEnergy = FindOptionalColumn(headerToIndex, "kinetic_energy_kev", &kineticEnergyColumn);
+    const bool hasPitchAngle = FindOptionalColumn(headerToIndex, "pitch_angle_deg", &pitchAngleColumn);
+
+    std::size_t maxRequiredColumn = std::max(
         {stepColumn, timeColumn, totalParticlesColumn, sampledParticlesColumn, sampleStrideColumn,
          speciesNameColumn, xColumn, yColumn, zColumn});
+    if (hasParticleIndex) {
+        maxRequiredColumn = std::max(maxRequiredColumn, particleIndexColumn);
+    }
+    if (hasVelocity) {
+        maxRequiredColumn = std::max(maxRequiredColumn, std::max(vxColumn, std::max(vyColumn, vzColumn)));
+    }
+    if (hasWeight) {
+        maxRequiredColumn = std::max(maxRequiredColumn, weightColumn);
+    }
+    if (hasSpeed) {
+        maxRequiredColumn = std::max(maxRequiredColumn, speedColumn);
+    }
+    if (hasKineticEnergy) {
+        maxRequiredColumn = std::max(maxRequiredColumn, kineticEnergyColumn);
+    }
+    if (hasPitchAngle) {
+        maxRequiredColumn = std::max(maxRequiredColumn, pitchAngleColumn);
+    }
 
     ReplayFrame parsed;
     bool sawAnyRow = false;
@@ -190,9 +238,17 @@ bool ParseParticleSnapshotCsv(
         uint64_t totalParticles = 0;
         uint64_t sampledParticles = 0;
         uint64_t sampleStride = 0;
+        uint64_t particleIndex = 0;
         double x = 0.0;
         double y = 0.0;
         double z = 0.0;
+        double vx = 0.0;
+        double vy = 0.0;
+        double vz = 0.0;
+        double weight = 0.0;
+        double speed = 0.0;
+        double kineticEnergy = 0.0;
+        double pitchAngle = std::numeric_limits<double>::quiet_NaN();
 
         if (!ParseInt(TrimAscii(fields[stepColumn]), &step) ||
             !ParseDouble(TrimAscii(fields[timeColumn]), &time_s) ||
@@ -208,6 +264,46 @@ bool ParseParticleSnapshotCsv(
             return false;
         }
 
+        if (hasParticleIndex && !ParseUInt64(TrimAscii(fields[particleIndexColumn]), &particleIndex)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV particle_index parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasVelocity &&
+            (!ParseDouble(TrimAscii(fields[vxColumn]), &vx) ||
+             !ParseDouble(TrimAscii(fields[vyColumn]), &vy) ||
+             !ParseDouble(TrimAscii(fields[vzColumn]), &vz))) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV velocity parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasWeight && !ParseDouble(TrimAscii(fields[weightColumn]), &weight)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV weight parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasSpeed && !ParseDouble(TrimAscii(fields[speedColumn]), &speed)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV speed parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasKineticEnergy && !ParseDouble(TrimAscii(fields[kineticEnergyColumn]), &kineticEnergy)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV kinetic energy parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasPitchAngle && !ParseDouble(TrimAscii(fields[pitchAngleColumn]), &pitchAngle)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV pitch angle parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+
         if (!sawAnyRow) {
             parsed.step = step;
             parsed.time_s = time_s;
@@ -218,9 +314,15 @@ bool ParseParticleSnapshotCsv(
         }
 
         ReplayParticle particle;
+        particle.particleIndex = hasParticleIndex ? particleIndex : static_cast<uint64_t>(parsed.particles.size());
         particle.position_m = Vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+        particle.velocity_mPerS = Vec3(static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz));
         particle.speciesName = TrimAscii(fields[speciesNameColumn]);
         particle.species = ParseReplaySpeciesName(particle.speciesName);
+        particle.weight = hasWeight ? weight : 0.0;
+        particle.speed_mPerS = hasSpeed ? speed : static_cast<double>(particle.velocity_mPerS.Magnitude());
+        particle.kineticEnergy_keV = hasKineticEnergy ? kineticEnergy : 0.0;
+        particle.pitchAngle_deg = hasPitchAngle ? pitchAngle : std::numeric_limits<double>::quiet_NaN();
         parsed.particles.push_back(std::move(particle));
     }
 
