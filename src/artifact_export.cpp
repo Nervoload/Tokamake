@@ -97,6 +97,18 @@ tokamak::Vec3 ApproximateBField(
     return tokamak::EvaluateMagneticFieldSample(config, profileConfig, position).totalField_T;
 }
 
+tokamak::Vec3 ToroidalUnit(float phiRadians) {
+    return tokamak::Vec3(-std::sin(phiRadians), std::cos(phiRadians), 0.0f).Normalized();
+}
+
+tokamak::Vec3 TorusPoint(float majorRadius, float minorRadius, float phiRadians, float thetaRadians, float rho) {
+    const float ringRadius = majorRadius + (minorRadius * rho * std::cos(thetaRadians));
+    return tokamak::Vec3(
+        ringRadius * std::cos(phiRadians),
+        ringRadius * std::sin(phiRadians),
+        minorRadius * rho * std::sin(thetaRadians));
+}
+
 double PitchAngleDegrees(const tokamak::Vec3& velocity, const tokamak::Vec3& magneticField) {
     const double speed = static_cast<double>(velocity.Magnitude());
     const double fieldMagnitude = static_cast<double>(magneticField.Magnitude());
@@ -164,6 +176,16 @@ const char* ResidualStatusNote(const tokamak::TelemetrySnapshot& telemetry) {
     return "Residual status unknown";
 }
 
+tokamak::Vec3 LorentzAcceleration(
+    const tokamak::Vec3& velocity,
+    const tokamak::Vec3& electricField,
+    const tokamak::Vec3& magneticField,
+    double chargeToMass) {
+    const tokamak::Vec3 vxB = tokamak::Vec3::Cross(velocity, magneticField);
+    const tokamak::Vec3 fieldTerm = electricField + vxB;
+    return fieldTerm * static_cast<float>(chargeToMass);
+}
+
 }  // namespace
 
 namespace tokamak {
@@ -223,6 +245,7 @@ bool Milestone7ArtifactExporter::Start(
     speedHistogramRelativePath_ = "speed_histogram_v2.csv";
     pitchHistogramRelativePath_ = "pitch_angle_histogram_v2.csv";
     solverResidualRelativePath_ = "solver_residuals_v2.csv";
+    fieldProbeRelativePath_ = "field_probes_v2.csv";
 
     summaryCsv_.open((runDirectoryPath / summaryRelativePath_).string(), std::ios::trunc);
     radialCsv_.open((runDirectoryPath / radialRelativePath_).string(), std::ios::trunc);
@@ -233,13 +256,14 @@ bool Milestone7ArtifactExporter::Start(
     speedHistogramCsv_.open((runDirectoryPath / speedHistogramRelativePath_).string(), std::ios::trunc);
     pitchHistogramCsv_.open((runDirectoryPath / pitchHistogramRelativePath_).string(), std::ios::trunc);
     solverResidualCsv_.open((runDirectoryPath / solverResidualRelativePath_).string(), std::ios::trunc);
+    fieldProbeCsv_.open((runDirectoryPath / fieldProbeRelativePath_).string(), std::ios::trunc);
 
     if (!summaryCsv_.is_open() || !radialCsv_.is_open() || !magneticFieldCsv_.is_open() ||
         !electrostaticDiagnosticsCsv_.is_open() ||
         !fusionReactivityDiagnosticsCsv_.is_open() ||
         !wallInteractionBridgeCsv_.is_open() ||
         !speedHistogramCsv_.is_open() ||
-        !pitchHistogramCsv_.is_open() || !solverResidualCsv_.is_open()) {
+        !pitchHistogramCsv_.is_open() || !solverResidualCsv_.is_open() || !fieldProbeCsv_.is_open()) {
         SetError("Failed to open one or more artifact CSV files under: " + runDirectory_);
         return false;
     }
@@ -280,10 +304,14 @@ bool Milestone7ArtifactExporter::Start(
     solverResidualCsv_
         << "schema_version,step,time_s,residual_available,residual_l2,solver_name,status,iterations,converged,tolerance,note\n";
 
+    fieldProbeCsv_
+        << "schema_version,step,time_s,probe_index,phi_deg,rho,theta_deg,x_m,y_m,z_m,"
+        << "bx_t,by_t,bz_t,b_magnitude_t,ex_v_per_m,ey_v_per_m,ez_v_per_m,e_magnitude_v_per_m\n";
+
     if (!summaryCsv_.good() || !radialCsv_.good() || !magneticFieldCsv_.good() || !electrostaticDiagnosticsCsv_.good() ||
         !fusionReactivityDiagnosticsCsv_.good() || !wallInteractionBridgeCsv_.good() ||
         !speedHistogramCsv_.good() ||
-        !pitchHistogramCsv_.good() || !solverResidualCsv_.good()) {
+        !pitchHistogramCsv_.good() || !solverResidualCsv_.good() || !fieldProbeCsv_.good()) {
         SetError("Failed to write CSV headers for artifact files");
         return false;
     }
@@ -329,7 +357,8 @@ bool Milestone7ArtifactExporter::WriteStep(
     }
 
     if (particleSnapshotDue && telemetry.step != lastParticleSnapshotStepWritten_) {
-        if (!WriteParticleSnapshotCsv(engine, telemetry)) {
+        if (!WriteParticleSnapshotCsv(engine, telemetry) ||
+            !WriteFieldProbeRows(engine, telemetry)) {
             return false;
         }
         lastParticleSnapshotStepWritten_ = telemetry.step;
@@ -352,11 +381,12 @@ bool Milestone7ArtifactExporter::Finish() {
     speedHistogramCsv_.flush();
     pitchHistogramCsv_.flush();
     solverResidualCsv_.flush();
+    fieldProbeCsv_.flush();
 
     if (!summaryCsv_.good() || !radialCsv_.good() || !magneticFieldCsv_.good() || !electrostaticDiagnosticsCsv_.good() ||
         !fusionReactivityDiagnosticsCsv_.good() || !wallInteractionBridgeCsv_.good() ||
         !speedHistogramCsv_.good() ||
-        !pitchHistogramCsv_.good() || !solverResidualCsv_.good()) {
+        !pitchHistogramCsv_.good() || !solverResidualCsv_.good() || !fieldProbeCsv_.good()) {
         SetError("Failed to flush artifact CSV streams");
         return false;
     }
@@ -923,7 +953,9 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
 
     out << "schema_version,step,time_s,total_particles,sampled_particles,sample_stride,particle_index,species,species_name,"
         << "x_m,y_m,z_m,vx_m_per_s,vy_m_per_s,vz_m_per_s,mass_kg,charge_c,q_over_m,weight,"
-        << "speed_m_per_s,kinetic_energy_kev,pitch_angle_deg\n";
+        << "speed_m_per_s,kinetic_energy_kev,pitch_angle_deg,"
+        << "bx_t,by_t,bz_t,b_magnitude_t,ex_v_per_m,ey_v_per_m,ez_v_per_m,e_magnitude_v_per_m,"
+        << "ax_lorentz_m_per_s2,ay_lorentz_m_per_s2,az_lorentz_m_per_s2,a_lorentz_m_per_s2\n";
 
     std::size_t sampledCount = 0;
     for (std::size_t i = 0; i < totalParticles; ++i) {
@@ -936,9 +968,15 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
         const double speed = static_cast<double>(velocities[i].Magnitude());
         const double kineticEnergyJ = 0.5 * masses[i] * speed * speed;
         const double kineticEnergyKeV = kineticEnergyJ / (1000.0 * constants::kElementaryCharge_C);
-        const Vec3 magneticField =
-            ApproximateBField(engine.Config(), engine.PlasmaCurrentProfile(), positions[i]);
+        const FieldProbeSnapshot localField = engine.SampleFieldsAt(positions[i]);
+        const Vec3 magneticField = localField.magneticField.totalField_T;
+        const Vec3 electricField = localField.electricField_VPerM;
         const double pitchAngleDeg = PitchAngleDegrees(velocities[i], magneticField);
+        const Vec3 lorentzAcceleration = LorentzAcceleration(
+            velocities[i],
+            electricField,
+            magneticField,
+            qOverM[i]);
         out << std::setprecision(std::numeric_limits<double>::max_digits10)
             << kMilestone7OutputSchemaVersion << ','
             << telemetry.step << ','
@@ -961,7 +999,19 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
             << weights[i] << ','
             << speed << ','
             << kineticEnergyKeV << ','
-            << pitchAngleDeg << '\n';
+            << pitchAngleDeg << ','
+            << magneticField.x << ','
+            << magneticField.y << ','
+            << magneticField.z << ','
+            << localField.magneticField.totalMagnitude_T << ','
+            << electricField.x << ','
+            << electricField.y << ','
+            << electricField.z << ','
+            << static_cast<double>(electricField.Magnitude()) << ','
+            << lorentzAcceleration.x << ','
+            << lorentzAcceleration.y << ','
+            << lorentzAcceleration.z << ','
+            << static_cast<double>(lorentzAcceleration.Magnitude()) << '\n';
         ++sampledCount;
     }
 
@@ -972,6 +1022,58 @@ bool Milestone7ArtifactExporter::WriteParticleSnapshotCsv(
     }
 
     particleSnapshotRelativePaths_.push_back(relativePath);
+    return true;
+}
+
+bool Milestone7ArtifactExporter::WriteFieldProbeRows(
+    const TokamakEngine& engine,
+    const TelemetrySnapshot& telemetry) {
+    constexpr float kToroidalAngles_deg[] = {0.0f, 45.0f, 90.0f, 135.0f, 180.0f, 225.0f, 270.0f, 315.0f};
+    constexpr float kRhoLevels[] = {0.20f, 0.45f, 0.70f};
+    constexpr float kPoloidalAngles_deg[] = {0.0f, 60.0f, 120.0f, 180.0f, 240.0f, 300.0f};
+
+    const TokamakConfig& config = engine.Config();
+    std::size_t probeIndex = 0;
+    for (const float phiDeg : kToroidalAngles_deg) {
+        const float phiRad = phiDeg * static_cast<float>(kPi / 180.0);
+        for (const float rho : kRhoLevels) {
+            for (const float thetaDeg : kPoloidalAngles_deg) {
+                const float thetaRad = thetaDeg * static_cast<float>(kPi / 180.0);
+                const Vec3 position = TorusPoint(
+                    config.majorRadius_m,
+                    config.minorRadius_m,
+                    phiRad,
+                    thetaRad,
+                    rho);
+                const FieldProbeSnapshot field = engine.SampleFieldsAt(position);
+                fieldProbeCsv_ << std::setprecision(std::numeric_limits<double>::max_digits10)
+                               << kMilestone7OutputSchemaVersion << ','
+                               << telemetry.step << ','
+                               << telemetry.time_s << ','
+                               << probeIndex << ','
+                               << phiDeg << ','
+                               << rho << ','
+                               << thetaDeg << ','
+                               << position.x << ','
+                               << position.y << ','
+                               << position.z << ','
+                               << field.magneticField.totalField_T.x << ','
+                               << field.magneticField.totalField_T.y << ','
+                               << field.magneticField.totalField_T.z << ','
+                               << field.magneticField.totalMagnitude_T << ','
+                               << field.electricField_VPerM.x << ','
+                               << field.electricField_VPerM.y << ','
+                               << field.electricField_VPerM.z << ','
+                               << static_cast<double>(field.electricField_VPerM.Magnitude()) << '\n';
+                ++probeIndex;
+            }
+        }
+    }
+
+    if (!fieldProbeCsv_.good()) {
+        SetError("Failed writing field probe CSV rows");
+        return false;
+    }
     return true;
 }
 
@@ -994,9 +1096,12 @@ bool Milestone7ArtifactExporter::WriteManifestJson() {
     out << "    \"radial_profiles_csv\": \"" << radialRelativePath_ << "\",\n";
     out << "    \"magnetic_field_diagnostics_csv\": \"" << magneticFieldRelativePath_ << "\",\n";
     out << "    \"electrostatic_diagnostics_csv\": \"" << electrostaticDiagnosticsRelativePath_ << "\",\n";
+    out << "    \"fusion_reactivity_diagnostics_csv\": \"" << fusionReactivityDiagnosticsRelativePath_ << "\",\n";
+    out << "    \"wall_interaction_bridge_csv\": \"" << wallInteractionBridgeRelativePath_ << "\",\n";
     out << "    \"speed_histogram_csv\": \"" << speedHistogramRelativePath_ << "\",\n";
     out << "    \"pitch_histogram_csv\": \"" << pitchHistogramRelativePath_ << "\",\n";
     out << "    \"solver_residual_log_csv\": \"" << solverResidualRelativePath_ << "\",\n";
+    out << "    \"field_probe_samples_csv\": \"" << fieldProbeRelativePath_ << "\",\n";
     out << "    \"particle_snapshot_csv_files\": [";
     for (std::size_t i = 0; i < particleSnapshotRelativePaths_.size(); ++i) {
         if (i > 0) {
@@ -1043,6 +1148,9 @@ void Milestone7ArtifactExporter::CloseFiles() {
     }
     if (solverResidualCsv_.is_open()) {
         solverResidualCsv_.close();
+    }
+    if (fieldProbeCsv_.is_open()) {
+        fieldProbeCsv_.close();
     }
 }
 

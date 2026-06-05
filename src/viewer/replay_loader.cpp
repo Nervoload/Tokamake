@@ -58,6 +58,8 @@ void ReplayLoader::Clear() {
     stepToOrderedIndex_.clear();
     summaryRows_.clear();
     summaryRowByStep_.clear();
+    fieldProbesByStep_.clear();
+    analytics_.Clear();
     cache_.clear();
     cacheLruOrder_.clear();
     lastError_.clear();
@@ -105,6 +107,16 @@ bool ReplayLoader::InitializeFromManifest(const ReplayManifest& manifest) {
         return false;
     }
 
+    if (!LoadFieldProbes()) {
+        return false;
+    }
+
+    std::string analyticsError;
+    if (!analytics_.LoadFromManifest(manifest_, &analyticsError)) {
+        SetError(analyticsError);
+        return false;
+    }
+
     return true;
 }
 
@@ -121,6 +133,26 @@ bool ReplayLoader::LoadSummary() {
         summaryRowByStep_[summaryRows_[i].step] = i;
     }
 
+    return true;
+}
+
+bool ReplayLoader::LoadFieldProbes() {
+    fieldProbesByStep_.clear();
+    if (manifest_.files.fieldProbeSamplesCsv.empty()) {
+        return true;
+    }
+
+    const std::filesystem::path fieldProbePath = manifest_.runDirectory / manifest_.files.fieldProbeSamplesCsv;
+    if (!std::filesystem::exists(fieldProbePath)) {
+        SetError("Field probe CSV listed in manifest does not exist: " + fieldProbePath.string());
+        return false;
+    }
+
+    std::string error;
+    if (!ParseFieldProbeCsv(fieldProbePath, &fieldProbesByStep_, &error)) {
+        SetError(error);
+        return false;
+    }
     return true;
 }
 
@@ -246,6 +278,14 @@ const ReplaySummaryPoint* ReplayLoader::SummaryForStep(int step) const {
         return nullptr;
     }
     return &summaryRows_[it->second];
+}
+
+const std::vector<ReplayFieldProbe>* ReplayLoader::FieldProbesForStep(int step) const {
+    const auto it = fieldProbesByStep_.find(step);
+    if (it == fieldProbesByStep_.end()) {
+        return nullptr;
+    }
+    return &it->second;
 }
 
 void ReplayLoader::SetError(const std::string& message) {

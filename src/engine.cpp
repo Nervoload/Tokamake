@@ -682,6 +682,14 @@ bool TokamakEngine::HasFiniteState() const {
            std::isfinite(snapshot.electrostaticField.meanElectricField_VPerM);
 }
 
+FieldProbeSnapshot TokamakEngine::SampleFieldsAt(const Vec3& position) const {
+    FieldProbeSnapshot sample;
+    sample.magneticField =
+        EvaluateMagneticFieldSample(EffectiveTokamakConfig(time_s_), plasmaCurrentProfile_, position);
+    sample.electricField_VPerM = CalculateEField(position);
+    return sample;
+}
+
 void TokamakEngine::ValidateStateDebug() const {
     assert(particles_.IsArrayLengthConsistent());
     assert(particles_.IsFiniteState());

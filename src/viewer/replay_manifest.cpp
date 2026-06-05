@@ -41,6 +41,15 @@ bool ExtractStringField(const std::string& text, const char* key, std::string* o
     return true;
 }
 
+bool ExtractOptionalStringField(const std::string& text, const char* key, std::string* outValue) {
+    std::string value;
+    if (!ExtractStringField(text, key, &value)) {
+        return false;
+    }
+    *outValue = value;
+    return true;
+}
+
 bool ExtractUInt32Field(const std::string& text, const char* key, uint32_t* outValue) {
     const std::string pattern = std::string("\"") + key + "\"\\s*:\\s*(\\d+)";
     const std::regex re(pattern);
@@ -107,6 +116,17 @@ bool ExtractStringArrayField(
     return true;
 }
 
+bool ExtractIntField(const std::string& text, const char* key, int* outValue) {
+    const std::string pattern = std::string("\"") + key + "\"\\s*:\\s*(-?\\d+)";
+    const std::regex re(pattern);
+    std::smatch match;
+    if (!std::regex_search(text, match, re)) {
+        return false;
+    }
+    *outValue = std::stoi(match[1].str());
+    return true;
+}
+
 std::string JoinMissingKeys(const std::vector<std::string>& keys) {
     std::ostringstream oss;
     for (std::size_t i = 0; i < keys.size(); ++i) {
@@ -166,6 +186,8 @@ bool ParseManifestV2File(
     if (!ExtractStringField(text, "electrostatic_diagnostics_csv", &parsed.files.electrostaticDiagnosticsCsv)) {
         missingKeys.emplace_back("files.electrostatic_diagnostics_csv");
     }
+    ExtractOptionalStringField(text, "fusion_reactivity_diagnostics_csv", &parsed.files.fusionReactivityDiagnosticsCsv);
+    ExtractOptionalStringField(text, "wall_interaction_bridge_csv", &parsed.files.wallInteractionBridgeCsv);
     if (!ExtractStringField(text, "speed_histogram_csv", &parsed.files.speedHistogramCsv)) {
         missingKeys.emplace_back("files.speed_histogram_csv");
     }
@@ -179,6 +201,7 @@ bool ParseManifestV2File(
     if (!ExtractStringArrayField(text, "particle_snapshot_csv_files", &parsed.files.particleSnapshotCsvFiles)) {
         missingKeys.emplace_back("files.particle_snapshot_csv_files");
     }
+    ExtractOptionalStringField(text, "field_probe_samples_csv", &parsed.files.fieldProbeSamplesCsv);
 
     if (!missingKeys.empty()) {
         if (errorOut != nullptr) {
@@ -250,6 +273,63 @@ bool ParseRunConfigV2File(
         parsed.hasTokamakGeometry = true;
         parsed.majorRadius_m = majorRadius;
         parsed.minorRadius_m = minorRadius;
+    }
+
+    TokamakConfig tokamakConfig;
+    bool hasToroidalCurrent = ExtractFloatField(text, "toroidal_current_a", &tokamakConfig.toroidalCurrent_A);
+    bool hasToroidalTurns = ExtractIntField(text, "toroidal_coil_turns", &tokamakConfig.toroidalCoilTurns);
+    bool hasPlasmaCurrent = ExtractFloatField(text, "plasma_current_a", &tokamakConfig.plasmaCurrent_A);
+    if (parsed.hasTokamakGeometry) {
+        tokamakConfig.majorRadius_m = parsed.majorRadius_m;
+        tokamakConfig.minorRadius_m = parsed.minorRadius_m;
+    }
+    if (parsed.hasTokamakGeometry && hasToroidalCurrent && hasToroidalTurns && hasPlasmaCurrent) {
+        parsed.tokamakConfig = tokamakConfig;
+        parsed.hasTokamakConfig = true;
+    }
+
+    std::string currentProfileKind;
+    if (ExtractStringField(text, "current_profile_kind", &currentProfileKind)) {
+        PlasmaCurrentProfileKind kind = PlasmaCurrentProfileKind::Uniform;
+        if (ParsePlasmaCurrentProfileKind(currentProfileKind, &kind)) {
+            parsed.plasmaCurrentProfile.kind = kind;
+            parsed.hasPlasmaCurrentProfile = true;
+        }
+    }
+    ExtractFloatField(text, "current_profile_axis_epsilon_m", &parsed.plasmaCurrentProfile.axisEpsilon_m);
+    ExtractFloatField(text, "current_profile_axis_blend_m", &parsed.plasmaCurrentProfile.customAxisBlendRadius_m);
+
+    std::string electricFieldMode;
+    if (ExtractStringField(text, "electric_field_mode", &electricFieldMode)) {
+        ElectricFieldMode mode = ElectricFieldMode::Placeholder;
+        if (ParseElectricFieldMode(electricFieldMode, &mode)) {
+            parsed.electricFieldMode = mode;
+            parsed.hasElectricFieldMode = true;
+        }
+    }
+
+    NBIConfig nbiConfig;
+    int particlesPerStep = 0;
+    bool isActive = false;
+    std::string isActiveText;
+    if (ExtractStringField(text, "is_active", &isActiveText)) {
+        isActive = (isActiveText == "true");
+    } else {
+        const std::regex boolRe("\"is_active\"\\s*:\\s*(true|false)");
+        std::smatch match;
+        if (std::regex_search(text, match, boolRe)) {
+            isActive = match[1].str() == "true";
+        }
+    }
+    bool hasBeamEnergy = ExtractFloatField(text, "beam_energy_kev", &nbiConfig.beamEnergy_keV);
+    bool hasParticlesPerStep = ExtractIntField(text, "particles_per_step", &particlesPerStep);
+    if (hasParticlesPerStep) {
+        nbiConfig.particlesPerStep = particlesPerStep;
+    }
+    nbiConfig.isActive = isActive;
+    if (hasBeamEnergy && hasParticlesPerStep) {
+        parsed.nbiConfig = nbiConfig;
+        parsed.hasNbiConfig = true;
     }
 
     *outRunConfig = parsed;

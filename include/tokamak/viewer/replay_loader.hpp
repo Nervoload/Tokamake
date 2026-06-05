@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "tokamak/viewer/replay_analytics.hpp"
 #include "tokamak/viewer/replay_manifest.hpp"
 #include "tokamak/viewer/replay_snapshot.hpp"
 
@@ -32,6 +33,8 @@ public:
     void SetCacheCapacity(std::size_t cacheCapacity);
 
     const ReplaySummaryPoint* SummaryForStep(int step) const;
+    const std::vector<ReplayFieldProbe>* FieldProbesForStep(int step) const;
+    const ReplayAnalytics& Analytics() const { return analytics_; }
 
     const std::string& LastError() const { return lastError_; }
 
@@ -43,6 +46,7 @@ private:
 
     bool InitializeFromManifest(const ReplayManifest& manifest);
     bool LoadSummary();
+    bool LoadFieldProbes();
     bool LoadFrameUncached(std::size_t orderedIndex, ReplayFrame* outFrame);
 
     struct CachedFrame {
@@ -62,6 +66,8 @@ private:
     std::unordered_map<int, std::size_t> stepToOrderedIndex_;
     std::vector<ReplaySummaryPoint> summaryRows_;
     std::unordered_map<int, std::size_t> summaryRowByStep_;
+    std::unordered_map<int, std::vector<ReplayFieldProbe>> fieldProbesByStep_;
+    ReplayAnalytics analytics_;
 
     std::vector<CachedFrame> cache_;
     std::vector<std::size_t> cacheLruOrder_;

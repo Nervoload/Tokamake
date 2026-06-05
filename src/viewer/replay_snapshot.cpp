@@ -165,10 +165,25 @@ bool ParseParticleSnapshotCsv(
     std::size_t vxColumn = 0;
     std::size_t vyColumn = 0;
     std::size_t vzColumn = 0;
+    std::size_t massColumn = 0;
+    std::size_t chargeColumn = 0;
+    std::size_t chargeToMassColumn = 0;
     std::size_t weightColumn = 0;
     std::size_t speedColumn = 0;
     std::size_t kineticEnergyColumn = 0;
     std::size_t pitchAngleColumn = 0;
+    std::size_t bxColumn = 0;
+    std::size_t byColumn = 0;
+    std::size_t bzColumn = 0;
+    std::size_t bMagnitudeColumn = 0;
+    std::size_t exColumn = 0;
+    std::size_t eyColumn = 0;
+    std::size_t ezColumn = 0;
+    std::size_t eMagnitudeColumn = 0;
+    std::size_t axColumn = 0;
+    std::size_t ayColumn = 0;
+    std::size_t azColumn = 0;
+    std::size_t aMagnitudeColumn = 0;
 
     if (!LookupColumn(headerToIndex, "step", &stepColumn, errorOut) ||
         !LookupColumn(headerToIndex, "time_s", &timeColumn, errorOut) ||
@@ -187,10 +202,29 @@ bool ParseParticleSnapshotCsv(
         FindOptionalColumn(headerToIndex, "vx_m_per_s", &vxColumn) &&
         FindOptionalColumn(headerToIndex, "vy_m_per_s", &vyColumn) &&
         FindOptionalColumn(headerToIndex, "vz_m_per_s", &vzColumn);
+    const bool hasMass = FindOptionalColumn(headerToIndex, "mass_kg", &massColumn);
+    const bool hasCharge = FindOptionalColumn(headerToIndex, "charge_c", &chargeColumn);
+    const bool hasChargeToMass = FindOptionalColumn(headerToIndex, "q_over_m", &chargeToMassColumn);
     const bool hasWeight = FindOptionalColumn(headerToIndex, "weight", &weightColumn);
     const bool hasSpeed = FindOptionalColumn(headerToIndex, "speed_m_per_s", &speedColumn);
     const bool hasKineticEnergy = FindOptionalColumn(headerToIndex, "kinetic_energy_kev", &kineticEnergyColumn);
     const bool hasPitchAngle = FindOptionalColumn(headerToIndex, "pitch_angle_deg", &pitchAngleColumn);
+    const bool hasMagneticField =
+        FindOptionalColumn(headerToIndex, "bx_t", &bxColumn) &&
+        FindOptionalColumn(headerToIndex, "by_t", &byColumn) &&
+        FindOptionalColumn(headerToIndex, "bz_t", &bzColumn);
+    const bool hasMagneticMagnitude = FindOptionalColumn(headerToIndex, "b_magnitude_t", &bMagnitudeColumn);
+    const bool hasElectricField =
+        FindOptionalColumn(headerToIndex, "ex_v_per_m", &exColumn) &&
+        FindOptionalColumn(headerToIndex, "ey_v_per_m", &eyColumn) &&
+        FindOptionalColumn(headerToIndex, "ez_v_per_m", &ezColumn);
+    const bool hasElectricMagnitude = FindOptionalColumn(headerToIndex, "e_magnitude_v_per_m", &eMagnitudeColumn);
+    const bool hasLorentzAcceleration =
+        FindOptionalColumn(headerToIndex, "ax_lorentz_m_per_s2", &axColumn) &&
+        FindOptionalColumn(headerToIndex, "ay_lorentz_m_per_s2", &ayColumn) &&
+        FindOptionalColumn(headerToIndex, "az_lorentz_m_per_s2", &azColumn);
+    const bool hasLorentzAccelerationMagnitude =
+        FindOptionalColumn(headerToIndex, "a_lorentz_m_per_s2", &aMagnitudeColumn);
 
     std::size_t maxRequiredColumn = std::max(
         {stepColumn, timeColumn, totalParticlesColumn, sampledParticlesColumn, sampleStrideColumn,
@@ -204,6 +238,15 @@ bool ParseParticleSnapshotCsv(
     if (hasWeight) {
         maxRequiredColumn = std::max(maxRequiredColumn, weightColumn);
     }
+    if (hasMass) {
+        maxRequiredColumn = std::max(maxRequiredColumn, massColumn);
+    }
+    if (hasCharge) {
+        maxRequiredColumn = std::max(maxRequiredColumn, chargeColumn);
+    }
+    if (hasChargeToMass) {
+        maxRequiredColumn = std::max(maxRequiredColumn, chargeToMassColumn);
+    }
     if (hasSpeed) {
         maxRequiredColumn = std::max(maxRequiredColumn, speedColumn);
     }
@@ -212,6 +255,24 @@ bool ParseParticleSnapshotCsv(
     }
     if (hasPitchAngle) {
         maxRequiredColumn = std::max(maxRequiredColumn, pitchAngleColumn);
+    }
+    if (hasMagneticField) {
+        maxRequiredColumn = std::max(maxRequiredColumn, std::max(bxColumn, std::max(byColumn, bzColumn)));
+    }
+    if (hasMagneticMagnitude) {
+        maxRequiredColumn = std::max(maxRequiredColumn, bMagnitudeColumn);
+    }
+    if (hasElectricField) {
+        maxRequiredColumn = std::max(maxRequiredColumn, std::max(exColumn, std::max(eyColumn, ezColumn)));
+    }
+    if (hasElectricMagnitude) {
+        maxRequiredColumn = std::max(maxRequiredColumn, eMagnitudeColumn);
+    }
+    if (hasLorentzAcceleration) {
+        maxRequiredColumn = std::max(maxRequiredColumn, std::max(axColumn, std::max(ayColumn, azColumn)));
+    }
+    if (hasLorentzAccelerationMagnitude) {
+        maxRequiredColumn = std::max(maxRequiredColumn, aMagnitudeColumn);
     }
 
     ReplayFrame parsed;
@@ -245,10 +306,25 @@ bool ParseParticleSnapshotCsv(
         double vx = 0.0;
         double vy = 0.0;
         double vz = 0.0;
+        double mass = 0.0;
+        double charge = 0.0;
+        double chargeToMass = 0.0;
         double weight = 0.0;
         double speed = 0.0;
         double kineticEnergy = 0.0;
         double pitchAngle = std::numeric_limits<double>::quiet_NaN();
+        double bx = 0.0;
+        double by = 0.0;
+        double bz = 0.0;
+        double bMagnitude = 0.0;
+        double ex = 0.0;
+        double ey = 0.0;
+        double ez = 0.0;
+        double eMagnitude = 0.0;
+        double ax = 0.0;
+        double ay = 0.0;
+        double az = 0.0;
+        double aMagnitude = 0.0;
 
         if (!ParseInt(TrimAscii(fields[stepColumn]), &step) ||
             !ParseDouble(TrimAscii(fields[timeColumn]), &time_s) ||
@@ -279,6 +355,24 @@ bool ParseParticleSnapshotCsv(
             }
             return false;
         }
+        if (hasMass && !ParseDouble(TrimAscii(fields[massColumn]), &mass)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV mass parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasCharge && !ParseDouble(TrimAscii(fields[chargeColumn]), &charge)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV charge parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasChargeToMass && !ParseDouble(TrimAscii(fields[chargeToMassColumn]), &chargeToMass)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV q_over_m parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
         if (hasWeight && !ParseDouble(TrimAscii(fields[weightColumn]), &weight)) {
             if (errorOut != nullptr) {
                 *errorOut = "Snapshot CSV weight parse error at line " + std::to_string(lineNumber);
@@ -303,6 +397,51 @@ bool ParseParticleSnapshotCsv(
             }
             return false;
         }
+        if (hasMagneticField &&
+            (!ParseDouble(TrimAscii(fields[bxColumn]), &bx) ||
+             !ParseDouble(TrimAscii(fields[byColumn]), &by) ||
+             !ParseDouble(TrimAscii(fields[bzColumn]), &bz))) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV magnetic field parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasMagneticMagnitude && !ParseDouble(TrimAscii(fields[bMagnitudeColumn]), &bMagnitude)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV magnetic magnitude parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasElectricField &&
+            (!ParseDouble(TrimAscii(fields[exColumn]), &ex) ||
+             !ParseDouble(TrimAscii(fields[eyColumn]), &ey) ||
+             !ParseDouble(TrimAscii(fields[ezColumn]), &ez))) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV electric field parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasElectricMagnitude && !ParseDouble(TrimAscii(fields[eMagnitudeColumn]), &eMagnitude)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV electric magnitude parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasLorentzAcceleration &&
+            (!ParseDouble(TrimAscii(fields[axColumn]), &ax) ||
+             !ParseDouble(TrimAscii(fields[ayColumn]), &ay) ||
+             !ParseDouble(TrimAscii(fields[azColumn]), &az))) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV Lorentz acceleration parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+        if (hasLorentzAccelerationMagnitude && !ParseDouble(TrimAscii(fields[aMagnitudeColumn]), &aMagnitude)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Snapshot CSV Lorentz acceleration magnitude parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
 
         if (!sawAnyRow) {
             parsed.step = step;
@@ -319,10 +458,23 @@ bool ParseParticleSnapshotCsv(
         particle.velocity_mPerS = Vec3(static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz));
         particle.speciesName = TrimAscii(fields[speciesNameColumn]);
         particle.species = ParseReplaySpeciesName(particle.speciesName);
+        particle.mass_kg = hasMass ? mass : 0.0;
+        particle.charge_C = hasCharge ? charge : 0.0;
+        particle.chargeToMass = hasChargeToMass ? chargeToMass : 0.0;
         particle.weight = hasWeight ? weight : 0.0;
         particle.speed_mPerS = hasSpeed ? speed : static_cast<double>(particle.velocity_mPerS.Magnitude());
         particle.kineticEnergy_keV = hasKineticEnergy ? kineticEnergy : 0.0;
         particle.pitchAngle_deg = hasPitchAngle ? pitchAngle : std::numeric_limits<double>::quiet_NaN();
+        particle.magneticField_T = Vec3(static_cast<float>(bx), static_cast<float>(by), static_cast<float>(bz));
+        particle.electricField_VPerM = Vec3(static_cast<float>(ex), static_cast<float>(ey), static_cast<float>(ez));
+        particle.magneticMagnitude_T =
+            hasMagneticMagnitude ? bMagnitude : static_cast<double>(particle.magneticField_T.Magnitude());
+        particle.electricMagnitude_VPerM =
+            hasElectricMagnitude ? eMagnitude : static_cast<double>(particle.electricField_VPerM.Magnitude());
+        particle.lorentzAcceleration_mPerS2 =
+            Vec3(static_cast<float>(ax), static_cast<float>(ay), static_cast<float>(az));
+        particle.lorentzAccelerationMagnitude_mPerS2 =
+            hasLorentzAccelerationMagnitude ? aMagnitude : static_cast<double>(particle.lorentzAcceleration_mPerS2.Magnitude());
         parsed.particles.push_back(std::move(particle));
     }
 
@@ -334,6 +486,158 @@ bool ParseParticleSnapshotCsv(
     }
 
     *outFrame = std::move(parsed);
+    return true;
+}
+
+bool ParseFieldProbeCsv(
+    const std::filesystem::path& fieldProbeCsvPath,
+    std::unordered_map<int, std::vector<ReplayFieldProbe>>* outFieldProbesByStep,
+    std::string* errorOut) {
+    if (outFieldProbesByStep == nullptr) {
+        if (errorOut != nullptr) {
+            *errorOut = "ParseFieldProbeCsv: outFieldProbesByStep is null";
+        }
+        return false;
+    }
+
+    std::ifstream input(fieldProbeCsvPath);
+    if (!input.is_open()) {
+        if (errorOut != nullptr) {
+            *errorOut = "Failed to open field probe CSV: " + fieldProbeCsvPath.string();
+        }
+        return false;
+    }
+
+    std::string headerLine;
+    if (!std::getline(input, headerLine)) {
+        if (errorOut != nullptr) {
+            *errorOut = "Field probe CSV missing header row: " + fieldProbeCsvPath.string();
+        }
+        return false;
+    }
+
+    const std::vector<std::string> headerFields = SplitCsvLine(headerLine);
+    std::unordered_map<std::string, std::size_t> headerToIndex;
+    for (std::size_t i = 0; i < headerFields.size(); ++i) {
+        headerToIndex[TrimAscii(headerFields[i])] = i;
+    }
+
+    std::size_t stepColumn = 0;
+    std::size_t timeColumn = 0;
+    std::size_t probeIndexColumn = 0;
+    std::size_t phiColumn = 0;
+    std::size_t rhoColumn = 0;
+    std::size_t thetaColumn = 0;
+    std::size_t xColumn = 0;
+    std::size_t yColumn = 0;
+    std::size_t zColumn = 0;
+    std::size_t bxColumn = 0;
+    std::size_t byColumn = 0;
+    std::size_t bzColumn = 0;
+    std::size_t bMagnitudeColumn = 0;
+    std::size_t exColumn = 0;
+    std::size_t eyColumn = 0;
+    std::size_t ezColumn = 0;
+    std::size_t eMagnitudeColumn = 0;
+
+    if (!LookupColumn(headerToIndex, "step", &stepColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "time_s", &timeColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "probe_index", &probeIndexColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "phi_deg", &phiColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "rho", &rhoColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "theta_deg", &thetaColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "x_m", &xColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "y_m", &yColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "z_m", &zColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "bx_t", &bxColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "by_t", &byColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "bz_t", &bzColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "b_magnitude_t", &bMagnitudeColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "ex_v_per_m", &exColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "ey_v_per_m", &eyColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "ez_v_per_m", &ezColumn, errorOut) ||
+        !LookupColumn(headerToIndex, "e_magnitude_v_per_m", &eMagnitudeColumn, errorOut)) {
+        return false;
+    }
+
+    const std::size_t maxRequiredColumn =
+        std::max({stepColumn, timeColumn, probeIndexColumn, phiColumn, rhoColumn, thetaColumn,
+                  xColumn, yColumn, zColumn, bxColumn, byColumn, bzColumn, bMagnitudeColumn,
+                  exColumn, eyColumn, ezColumn, eMagnitudeColumn});
+
+    std::unordered_map<int, std::vector<ReplayFieldProbe>> parsed;
+    std::string line;
+    int lineNumber = 1;
+    while (std::getline(input, line)) {
+        ++lineNumber;
+        if (TrimAscii(line).empty()) {
+            continue;
+        }
+
+        const std::vector<std::string> fields = SplitCsvLine(line);
+        if (fields.size() <= maxRequiredColumn) {
+            if (errorOut != nullptr) {
+                *errorOut = "Field probe CSV row has too few columns at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+
+        int step = 0;
+        uint64_t probeIndex = 0;
+        double time_s = 0.0;
+        double phi = 0.0;
+        double rho = 0.0;
+        double theta = 0.0;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+        double bx = 0.0;
+        double by = 0.0;
+        double bz = 0.0;
+        double bMag = 0.0;
+        double ex = 0.0;
+        double ey = 0.0;
+        double ez = 0.0;
+        double eMag = 0.0;
+
+        if (!ParseInt(TrimAscii(fields[stepColumn]), &step) ||
+            !ParseUInt64(TrimAscii(fields[probeIndexColumn]), &probeIndex) ||
+            !ParseDouble(TrimAscii(fields[timeColumn]), &time_s) ||
+            !ParseDouble(TrimAscii(fields[phiColumn]), &phi) ||
+            !ParseDouble(TrimAscii(fields[rhoColumn]), &rho) ||
+            !ParseDouble(TrimAscii(fields[thetaColumn]), &theta) ||
+            !ParseDouble(TrimAscii(fields[xColumn]), &x) ||
+            !ParseDouble(TrimAscii(fields[yColumn]), &y) ||
+            !ParseDouble(TrimAscii(fields[zColumn]), &z) ||
+            !ParseDouble(TrimAscii(fields[bxColumn]), &bx) ||
+            !ParseDouble(TrimAscii(fields[byColumn]), &by) ||
+            !ParseDouble(TrimAscii(fields[bzColumn]), &bz) ||
+            !ParseDouble(TrimAscii(fields[bMagnitudeColumn]), &bMag) ||
+            !ParseDouble(TrimAscii(fields[exColumn]), &ex) ||
+            !ParseDouble(TrimAscii(fields[eyColumn]), &ey) ||
+            !ParseDouble(TrimAscii(fields[ezColumn]), &ez) ||
+            !ParseDouble(TrimAscii(fields[eMagnitudeColumn]), &eMag)) {
+            if (errorOut != nullptr) {
+                *errorOut = "Field probe CSV parse error at line " + std::to_string(lineNumber);
+            }
+            return false;
+        }
+
+        ReplayFieldProbe probe;
+        probe.probeIndex = probeIndex;
+        probe.time_s = time_s;
+        probe.phi_deg = phi;
+        probe.rho = rho;
+        probe.theta_deg = theta;
+        probe.position_m = Vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+        probe.magneticField_T = Vec3(static_cast<float>(bx), static_cast<float>(by), static_cast<float>(bz));
+        probe.electricField_VPerM = Vec3(static_cast<float>(ex), static_cast<float>(ey), static_cast<float>(ez));
+        probe.magneticMagnitude_T = bMag;
+        probe.electricMagnitude_VPerM = eMag;
+        parsed[step].push_back(std::move(probe));
+    }
+
+    *outFieldProbesByStep = std::move(parsed);
     return true;
 }
 

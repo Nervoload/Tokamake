@@ -139,6 +139,17 @@ Optional flags:
 - `--playback-rate 1.0`
 - `--start-step 0`
 
+## Physics Overlays
+New replays export per-frame field probe data and per-particle local Lorentz acceleration so the viewer can expose the actual EM structure of the run.
+
+Inside `tokamak_viewer`, open the `Physics Overlays` panel to toggle:
+- magnetic field arrows
+- electric field arrows
+- magnetic guide lines
+- per-particle force arrows
+
+The panel also shows the current reactor state and effective ramped parameters such as toroidal current, plasma current, beam energy, and peak field/force values in the current frame.
+
 ## Troubleshooting
 - Configure fails with missing vendor files: add the required files listed above.
 - Viewer opens but no frames: verify `manifest_v2.json` contains non-empty `files.particle_snapshot_csv_files` and referenced files exist.

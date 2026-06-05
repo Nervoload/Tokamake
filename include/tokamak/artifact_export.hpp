@@ -50,6 +50,7 @@ private:
     bool WritePitchHistogramRows(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
     bool WriteSolverResidualRow(const TelemetrySnapshot& telemetry);
     bool WriteParticleSnapshotCsv(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
+    bool WriteFieldProbeRows(const TokamakEngine& engine, const TelemetrySnapshot& telemetry);
     bool WriteManifestJson();
 
     void CloseFiles();
@@ -67,6 +68,7 @@ private:
     std::ofstream speedHistogramCsv_;
     std::ofstream pitchHistogramCsv_;
     std::ofstream solverResidualCsv_;
+    std::ofstream fieldProbeCsv_;
 
     std::string runDirectory_;
     std::string runId_;
@@ -80,6 +82,7 @@ private:
     std::string speedHistogramRelativePath_;
     std::string pitchHistogramRelativePath_;
     std::string solverResidualRelativePath_;
+    std::string fieldProbeRelativePath_;
     std::vector<std::string> particleSnapshotRelativePaths_;
     std::string lastError_;
 

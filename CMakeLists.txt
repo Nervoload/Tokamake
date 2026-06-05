@@ -21,6 +21,7 @@ add_library(tokamak_core STATIC
     src/reactivity.cpp
     src/spatial_grid.cpp
     src/telemetry.cpp
+    src/viewer/replay_analytics.cpp
     src/viewer/replay_loader.cpp
     src/viewer/replay_manifest.cpp
     src/viewer/replay_snapshot.cpp)

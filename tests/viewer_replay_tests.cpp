@@ -70,22 +70,55 @@ std::filesystem::path WriteMinimalRunArtifacts(const std::filesystem::path& root
 
     WriteTextFile(
         runDir / "radial_profiles_v2.csv",
-        "schema_version,step,time_s,bin_index,r_inner_m,r_outer_m,r_center_m,ion_count,macro_weight,shell_volume_m3,density_m3,avg_ion_energy_kev,fusion_events_cumulative,fusion_rate_m3_s,fusion_rate_placeholder\n");
+        "schema_version,step,time_s,bin_index,r_inner_m,r_outer_m,r_center_m,ion_count,macro_weight,shell_volume_m3,density_m3,avg_ion_energy_kev,fusion_events_cumulative,fusion_rate_m3_s,fusion_rate_placeholder\n"
+        "2,0,0.0,0,0.0,0.25,0.125,10,1.0,2.0,5.0,0.10,0,0.0,false\n"
+        "2,0,0.0,1,0.25,0.50,0.375,8,1.2,2.5,4.8,0.12,0,0.0,false\n"
+        "2,10,0.000001,0,0.0,0.25,0.125,11,1.1,2.0,5.5,0.14,1,2.5e18,false\n"
+        "2,10,0.000001,1,0.25,0.50,0.375,9,1.3,2.5,5.2,0.16,1,3.0e18,false\n");
     WriteTextFile(
         runDir / "magnetic_field_diagnostics_v2.csv",
-        "schema_version,step,time_s,bin_index,r_inner_m,r_outer_m,r_center_m,mean_b_t,sample_count,step_max_b_t,recommended_dt_s,profile_kind\n");
+        "schema_version,step,time_s,bin_index,r_inner_m,r_outer_m,r_center_m,mean_b_t,sample_count,step_max_b_t,recommended_dt_s,profile_kind\n"
+        "2,0,0.0,0,0.0,0.25,0.125,2.1,12,2.5,1.0e-8,uniform\n"
+        "2,10,0.000001,0,0.0,0.25,0.125,2.4,12,2.8,9.0e-9,uniform\n");
     WriteTextFile(
         runDir / "electrostatic_diagnostics_v2.csv",
-        "schema_version,step,time_s,electric_field_mode,boundary_condition,charge_assignment,max_electric_field_v_per_m,mean_electric_field_v_per_m,solver_iterations,solver_converged,residual_l2\n");
+        "schema_version,step,time_s,electric_field_mode,boundary_condition,charge_assignment,max_electric_field_v_per_m,mean_electric_field_v_per_m,solver_iterations,solver_converged,residual_l2\n"
+        "2,0,0.0,electrostatic,dirichlet0,cic,10.0,5.0,12,true,1.0e-6\n"
+        "2,10,0.000001,electrostatic,dirichlet0,cic,12.0,6.0,15,true,8.0e-7\n");
+    WriteTextFile(
+        runDir / "fusion_reactivity_diagnostics_v2.csv",
+        "schema_version,step,time_s,reactivity_model,cross_section_scale,probability_clamp,min_energy_kev,fusion_attempts_step,fusion_accepted_step,fusion_weight_attempted_step,fusion_weight_accepted_step,fuel_weight_consumed_d_step,fuel_weight_consumed_t_step,ash_weight_produced_he_step,avg_sigma_m2_step,avg_probability_step,avg_relative_speed_m_per_s_step,fusion_attempts_total,fusion_accepted_total\n"
+        "2,0,0.0,sigmae-table,1.0,0.95,0.0,0,0,0.0,0.0,0.0,0.0,0.0,nan,nan,nan,0,0\n"
+        "2,10,0.000001,sigmae-table,1.0,0.95,0.0,4,1,1.0,0.25,0.25,0.25,0.25,1.0e-28,0.12,8.0e5,4,1\n");
+    WriteTextFile(
+        runDir / "wall_interaction_bridge_v2.csv",
+        "schema_version,step,time_s,wall_mode,recycle_fraction,wall_hit_count_step,wall_impact_energy_j_step,wall_loss_weight_step,wall_hit_count_total,wall_impact_energy_j_total,wall_loss_weight_total\n"
+        "2,0,0.0,reflect,0.0,0,0.0,0.0,0,0.0,0.0\n"
+        "2,10,0.000001,reflect,0.0,2,1.5e-15,0.1,2,1.5e-15,0.1\n");
     WriteTextFile(
         runDir / "speed_histogram_v2.csv",
-        "schema_version,step,time_s,bin_index,speed_min_m_per_s,speed_max_m_per_s,count,total_samples\n");
+        "schema_version,step,time_s,bin_index,speed_min_m_per_s,speed_max_m_per_s,count,total_samples\n"
+        "2,0,0.0,0,0.0,5.0e5,1,2\n"
+        "2,0,0.0,1,5.0e5,1.0e6,1,2\n"
+        "2,10,0.000001,0,0.0,5.0e5,0,2\n"
+        "2,10,0.000001,1,5.0e5,1.0e6,2,2\n");
     WriteTextFile(
         runDir / "pitch_angle_histogram_v2.csv",
-        "schema_version,step,time_s,bin_index,pitch_min_deg,pitch_max_deg,count,total_samples,invalid_samples\n");
+        "schema_version,step,time_s,bin_index,pitch_min_deg,pitch_max_deg,count,total_samples,invalid_samples\n"
+        "2,0,0.0,0,0.0,90.0,1,2,0\n"
+        "2,0,0.0,1,90.0,180.0,1,2,0\n"
+        "2,10,0.000001,0,0.0,90.0,2,2,0\n"
+        "2,10,0.000001,1,90.0,180.0,0,2,0\n");
     WriteTextFile(
         runDir / "solver_residuals_v2.csv",
-        "schema_version,step,time_s,residual_available,residual_l2,solver_name,status,iterations,converged,tolerance,note\n");
+        "schema_version,step,time_s,residual_available,residual_l2,solver_name,status,iterations,converged,tolerance,note\n"
+        "2,0,0.0,true,1.0e-6,sor,measured,12,true,1.0e-8,\"initial solve\"\n"
+        "2,10,0.000001,true,8.0e-7,sor,measured,15,true,1.0e-8,\"settled\"\n");
+    WriteTextFile(
+        runDir / "field_probes_v2.csv",
+        "schema_version,step,time_s,probe_index,phi_deg,rho,theta_deg,x_m,y_m,z_m,bx_t,by_t,bz_t,b_magnitude_t,ex_v_per_m,ey_v_per_m,ez_v_per_m,e_magnitude_v_per_m\n"
+        "2,0,0.0,0,0.0,0.2,0.0,2.1,0.0,0.0,0.0,2.5,0.0,2.5,10.0,0.0,0.0,10.0\n"
+        "2,10,0.000001,0,0.0,0.2,0.0,2.1,0.0,0.0,0.0,2.8,0.0,2.8,12.0,0.0,0.0,12.0\n");
 
     WriteTextFile(
         runDir / "manifest_v2.json",
@@ -100,9 +133,12 @@ std::filesystem::path WriteMinimalRunArtifacts(const std::filesystem::path& root
         "    \"radial_profiles_csv\": \"radial_profiles_v2.csv\",\n"
         "    \"magnetic_field_diagnostics_csv\": \"magnetic_field_diagnostics_v2.csv\",\n"
         "    \"electrostatic_diagnostics_csv\": \"electrostatic_diagnostics_v2.csv\",\n"
+        "    \"fusion_reactivity_diagnostics_csv\": \"fusion_reactivity_diagnostics_v2.csv\",\n"
+        "    \"wall_interaction_bridge_csv\": \"wall_interaction_bridge_v2.csv\",\n"
         "    \"speed_histogram_csv\": \"speed_histogram_v2.csv\",\n"
         "    \"pitch_histogram_csv\": \"pitch_angle_histogram_v2.csv\",\n"
         "    \"solver_residual_log_csv\": \"solver_residuals_v2.csv\",\n"
+        "    \"field_probe_samples_csv\": \"field_probes_v2.csv\",\n"
         "    \"particle_snapshot_csv_files\": [\"snapshots/particles_step_00000000.csv\"]\n"
         "  }\n"
         "}\n");
@@ -153,6 +189,8 @@ TEST(ViewerReplayTest, ViewerManifestV2ParsesRequiredKeys) {
     EXPECT_EQ(manifest.schemaVersion, 2u);
     EXPECT_EQ(manifest.runId, "run_test");
     EXPECT_EQ(manifest.files.summaryCsv, "summary_v2.csv");
+    EXPECT_EQ(manifest.files.fusionReactivityDiagnosticsCsv, "fusion_reactivity_diagnostics_v2.csv");
+    EXPECT_EQ(manifest.files.wallInteractionBridgeCsv, "wall_interaction_bridge_v2.csv");
     EXPECT_EQ(manifest.files.particleSnapshotCsvFiles.size(), static_cast<std::size_t>(1));
 }
 
@@ -238,6 +276,29 @@ TEST(ViewerReplayTest, ViewerLoaderResolvesRelativePathsFromManifest) {
     EXPECT_NEAR(loader.RunConfig().startupRampDuration_s, 0.00004, 1.0e-12);
     EXPECT_NEAR(loader.RunConfig().fusionStartDelay_s, 0.000015, 1.0e-12);
     EXPECT_NEAR(loader.RunConfig().fusionRampDuration_s, 0.00002, 1.0e-12);
+    const std::vector<tokamak::viewer::ReplayFieldProbe>* fieldProbes = loader.FieldProbesForStep(0);
+    ASSERT_NE(fieldProbes, nullptr);
+    ASSERT_EQ(fieldProbes->size(), static_cast<std::size_t>(1));
+    EXPECT_NEAR((*fieldProbes)[0].magneticMagnitude_T, 2.5, 1.0e-12);
+
+    const tokamak::viewer::ReplayAnalytics& analytics = loader.Analytics();
+    const std::vector<tokamak::viewer::ReplayRadialProfileBin>* radial = analytics.RadialProfileForStep(10);
+    ASSERT_NE(radial, nullptr);
+    ASSERT_EQ(radial->size(), static_cast<std::size_t>(2));
+    EXPECT_NEAR((*radial)[1].fusionRate_m3_s, 3.0e18, 1.0e6);
+
+    const tokamak::viewer::ReplayFusionReactivityPoint* fusion = analytics.FusionReactivityForStep(10);
+    ASSERT_NE(fusion, nullptr);
+    EXPECT_EQ(fusion->fusionAcceptedStep, static_cast<uint64_t>(1));
+    EXPECT_NEAR(fusion->avgProbabilityStep, 0.12, 1.0e-12);
+
+    const tokamak::viewer::ReplayWallInteractionPoint* wall = analytics.WallInteractionForStep(10);
+    ASSERT_NE(wall, nullptr);
+    EXPECT_EQ(wall->wallHitCountStep, static_cast<uint64_t>(2));
+
+    const tokamak::viewer::ReplaySolverResidualPoint* residual = analytics.SolverResidualForStep(10);
+    ASSERT_NE(residual, nullptr);
+    EXPECT_EQ(residual->iterations, static_cast<uint32_t>(15));
 }
 
 TEST(ViewerReplayTest, ViewerLoaderRejectsMissingSnapshotFile) {
@@ -252,6 +313,24 @@ TEST(ViewerReplayTest, ViewerLoaderRejectsMissingSnapshotFile) {
         runDir / "summary_v2.csv",
         "schema_version,step,time_s,total_ions,avg_energy_kev,fusion_events_total\n"
         "2,0,0.0,0,0.0,0\n");
+    WriteTextFile(
+        runDir / "radial_profiles_v2.csv",
+        "schema_version,step,time_s,bin_index,r_inner_m,r_outer_m,r_center_m,ion_count,macro_weight,shell_volume_m3,density_m3,avg_ion_energy_kev,fusion_events_cumulative,fusion_rate_m3_s,fusion_rate_placeholder\n");
+    WriteTextFile(
+        runDir / "magnetic_field_diagnostics_v2.csv",
+        "schema_version,step,time_s,bin_index,r_inner_m,r_outer_m,r_center_m,mean_b_t,sample_count,step_max_b_t,recommended_dt_s,profile_kind\n");
+    WriteTextFile(
+        runDir / "electrostatic_diagnostics_v2.csv",
+        "schema_version,step,time_s,electric_field_mode,boundary_condition,charge_assignment,max_electric_field_v_per_m,mean_electric_field_v_per_m,solver_iterations,solver_converged,residual_l2\n");
+    WriteTextFile(
+        runDir / "speed_histogram_v2.csv",
+        "schema_version,step,time_s,bin_index,speed_min_m_per_s,speed_max_m_per_s,count,total_samples\n");
+    WriteTextFile(
+        runDir / "pitch_angle_histogram_v2.csv",
+        "schema_version,step,time_s,bin_index,pitch_min_deg,pitch_max_deg,count,total_samples,invalid_samples\n");
+    WriteTextFile(
+        runDir / "solver_residuals_v2.csv",
+        "schema_version,step,time_s,residual_available,residual_l2,solver_name,status,iterations,converged,tolerance,note\n");
 
     WriteTextFile(
         runDir / "manifest_v2.json",

@@ -11,6 +11,11 @@
 
 namespace tokamak {
 
+struct FieldProbeSnapshot {
+    MagneticFieldSample magneticField;
+    Vec3 electricField_VPerM = Vec3(0.0f, 0.0f, 0.0f);
+};
+
 class TokamakEngine {
 public:
     explicit TokamakEngine(const RunConfig& runConfig);
@@ -44,6 +49,7 @@ public:
     double SimTimeSeconds() const { return time_s_; }
     const std::vector<uint64_t>& FusionAcceptedByRadiusBins() const { return fusionAcceptedByRadiusBins_; }
     const std::vector<double>& FusionAcceptedWeightByRadiusBins() const { return fusionAcceptedWeightByRadiusBins_; }
+    FieldProbeSnapshot SampleFieldsAt(const Vec3& position) const;
 
 private:
     double StartupRampFraction(double sampleTime_s) const;

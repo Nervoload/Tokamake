@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "tokamak/magnetic_field.hpp"
+
 namespace tokamak::viewer {
 
 struct ReplayManifestFiles {
@@ -13,9 +15,12 @@ struct ReplayManifestFiles {
     std::string radialProfilesCsv;
     std::string magneticFieldDiagnosticsCsv;
     std::string electrostaticDiagnosticsCsv;
+    std::string fusionReactivityDiagnosticsCsv;
+    std::string wallInteractionBridgeCsv;
     std::string speedHistogramCsv;
     std::string pitchHistogramCsv;
     std::string solverResidualCsv;
+    std::string fieldProbeSamplesCsv;
     std::vector<std::string> particleSnapshotCsvFiles;
 };
 
@@ -32,6 +37,14 @@ struct ReplayRunConfig {
     bool hasTokamakGeometry = false;
     float majorRadius_m = 2.0f;
     float minorRadius_m = 0.5f;
+    TokamakConfig tokamakConfig;
+    bool hasTokamakConfig = false;
+    PlasmaCurrentProfileConfig plasmaCurrentProfile;
+    bool hasPlasmaCurrentProfile = false;
+    ElectricFieldMode electricFieldMode = ElectricFieldMode::Placeholder;
+    bool hasElectricFieldMode = false;
+    NBIConfig nbiConfig;
+    bool hasNbiConfig = false;
     uint64_t maxParticlesPerSnapshot = 0;
     bool hasMaxParticlesPerSnapshot = false;
     double startupRampDuration_s = 0.0;
